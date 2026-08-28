@@ -1,0 +1,72 @@
+name: open-typer
+description: |
+  Open-Typer is a free and open source software for
+  typewriting training and education. It runs on
+  multiple operating systems.
+base: core22
+adopt-info: open-typer
+confinement: strict
+
+parts:
+  open-typer:
+    plugin: nil
+    parse-info: [../src/data/com.github.open-typer.open-typer.metainfo.xml]
+    source: .
+    source-type: local
+    build-packages: [build-essential, qtbase5-dev, qtchooser, qt5-qmake, qtbase5-dev-tools, qttools5-dev-tools, qtdeclarative5-dev, qtquickcontrols2-5-dev, libssl-dev, libqt5charts5-dev]
+    stage-packages: [libqt5gui5, libqt5widgets5, libqt5x11extras5, libqt5quick5, libqt5quickwidgets5, libqt5quickcontrols2-5, qtwayland5, libqt5waylandclient5, libqt5charts5, libqt5printsupport5, libqt5svg5, qml-module-qtquick2, qml-module-qtquick-controls2, qml-module-qtquick-layouts, qml-module-qtquick-window2, qml-module-qtgraphicaleffects, qml-module-qt-labs-platform, qml-module-qtcharts]
+    override-pull: |
+      craftctl default
+      git config --global --add safe.directory /root/parts/open-typer/src
+      version=$(head -n 1 .qmake.conf)
+      version=${version:8}
+      craftctl set version="$version"
+      craftctl set grade=stable
+    override-build: |
+      qmake
+      make -j$(nproc --all)
+      cp open-typer $SNAPCRAFT_PART_INSTALL/usr/bin
+      cp *.so* $SNAPCRAFT_PART_INSTALL/usr/lib/ &#124;&#124; true
+      set -ex
+    after: [desktop-qt5]
+
+  desktop-qt5:
+    source: https://github.com/ubuntu/snapcraft-desktop-helpers.git
+    source-subdir: qt
+    plugin: make
+    make-parameters: ["FLAVOR=qt5"]
+    build-packages:
+      - build-essential
+      - qtbase5-dev
+      - dpkg-dev
+    stage-packages:
+      - libxkbcommon0
+      - dmz-cursor-theme
+      - light-themes
+      - adwaita-icon-theme
+      - gnome-themes-standard
+      - shared-mime-info
+      - libqt5gui5
+      - libgdk-pixbuf2.0-0
+      - libqt5svg5 # for loading icon themes which are svg
+      - locales-all
+      - xdg-user-dirs
+      - fcitx-frontend-qt5
+
+apps:
+  open-typer:
+    common-id: com.github.open-typer.open-typer
+    environment:
+      WAYLAND_DISPLAY: wayland-99
+    command: bin/desktop-launch open-typer
+    plugs:
+      - x11
+      - unity7
+      - network
+      - network-bind
+      - home
+      - desktop
+      - desktop-legacy
+      - removable-media
+      - opengl
+      - cups-control

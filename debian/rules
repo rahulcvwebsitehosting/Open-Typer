@@ -1,0 +1,15 @@
+#!/usr/bin/make -f
+
+build: export QT_SELECT = qt5
+build:
+	dh $@
+
+build-arch: export QT_SELECT = qt5
+build-arch:
+	dh $@
+
+%:
+	if [ -d .git ]; then \
+	echo `git rev-parse --short HEAD` > revision; \
+	fi
+	dh $@

@@ -1,0 +1,181 @@
+﻿/*
+ * GradingClassConfig.qml
+ * This file is part of Open-Typer
+ *
+ * Copyright (C) 2023 - Rahul Shyam
+ *
+ * Open-Typer is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * Open-Typer is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Open-Typer. If not, see <http://www.gnu.org/licenses/>.
+ */
+
+import QtQuick 2.12
+import QtQuick.Controls 2.5
+import QtQuick.Layouts 1.12
+import OpenTyper.Grades 1.0
+import OpenTyper.Ui 1.0
+import OpenTyper.UiComponents 1.0
+
+CustomDialog {
+	id: root
+	title: qsTr("Classes")
+	fixedSize: false
+	maximized: true
+	standardButtons: Dialog.Close
+	nativeDialogMinimumWidth: 800
+	nativeDialogMinimumHeight: 600
+	onActiveFocusChanged: {
+		if(activeFocus)
+			contents.currentItem.forceActiveFocus(Qt.TabFocusReason);
+	}
+
+	contentItem: StackView {
+		id: stackView
+		initialItem: listComponent
+
+		Component {
+			id: listComponent
+
+			ColumnLayout {
+				readonly property Class currentClass: ClassManager.classes[listView.currentIndex]
+
+				RowLayout {
+					Label {
+						Layout.fillWidth: true
+						text: root.title
+						font.pointSize: 12
+						font.bold: true
+					}
+
+					Control {
+						id: focusControl
+						onActiveFocusChanged: {
+							if(activeFocus)
+							{
+								if(editButton.visible)
+									editButton.forceActiveFocus(Qt.TabFocusReason);
+								else
+									addButton.forceActiveFocus(Qt.TabFocusReason);
+							}
+						}
+					}
+
+					CustomToolButton {
+						id: editButton
+						icon.name: "edit"
+						toolTipText: qsTr("Edit")
+						visible: listView.currentIndex != -1
+						onClicked: stackView.push(configComponent)
+					}
+
+					CustomToolButton {
+						icon.name: "delete"
+						toolTipText: qsTr("Remove")
+						visible: listView.currentIndex != -1
+						onClicked: ClassManager.removeClass(currentClass)
+					}
+
+					CustomToolButton {
+						id: addButton
+						icon.name: "add"
+						text: qsTr("Add class")
+						onClicked: ClassManager.createNewClass()
+						KeyNavigation.tab: listView.count > 0 ? listView : standardButton(Dialog.Close)
+					}
+				}
+
+				ListView {
+					id: listView
+					Layout.fillWidth: true
+					Layout.fillHeight: true
+					spacing: 15
+					model: ClassManager.classes
+					currentIndex: -1
+					clip: true
+					delegate: ListButton {
+						width: listView.width
+						title: model.name
+						text: model.description
+						onClicked: listView.currentIndex = index;
+						onDoubleClicked: editButton.clicked()
+						Keys.onSpacePressed: doubleClicked()
+					}
+					onActiveFocusChanged: {
+						if(activeFocus)
+						{
+							if(count == 0)
+								editButton.forceActiveFocus(Qt.TabFocusReason);
+							else if(currentIndex == -1)
+								currentIndex = 0;
+						}
+					}
+				}
+
+				onFocusChanged: {
+					if(focus)
+						focusControl.forceActiveFocus(Qt.TabFocusReason);
+				}
+			}
+		}
+
+		Component {
+			id: configComponent
+
+			ColumnLayout {
+				AccentButton {
+					id: backButton
+					icon.name: "left"
+					onClicked: stackView.pop()
+					Accessible.name: QmlUtils.translateStandardButton("Close")
+				}
+
+				CustomFlickable {
+					id: flickable
+					Layout.fillWidth: true
+					Layout.fillHeight: true
+					contentWidth: contentItem.childrenRect.width
+					contentHeight: contentItem.childrenRect.height
+					flickableDirection: Flickable.AutoFlickIfNeeded
+					showVerticalScrollBar: true
+					clip: true
+
+					GradingConfig {
+						id: gradingConfig
+						currentClass: stackView.get(0).currentClass
+					}
+
+					Connections {
+						target: QmlUtils
+						function onActiveFocusItemChanged() {
+							let focusItem = QmlUtils.activeFocusItem;
+							if(QmlUtils.itemHasChild(gradingConfig, focusItem))
+								flickable.ensureVisible(focusItem);
+						}
+					}
+				}
+
+				onFocusChanged: {
+					if(focus)
+						backButton.forceActiveFocus(Qt.TabFocusReason);
+				}
+			}
+		}
+	}
+
+	Connections {
+		target: standardButton(Dialog.Close)
+		function onActiveFocusChanged() {
+			if(!target.activeFocus)
+				root.contents.currentItem.forceActiveFocus(Qt.TabFocusReason);
+		}
+	}
+}

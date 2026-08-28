@@ -1,0 +1,36 @@
+<RCC>
+    <qresource prefix="/icons/open-typer/32x32">
+        <file>settings.svg</file>
+        <file>open.svg</file>
+        <file>print.svg</file>
+        <file>paper.svg</file>
+        <file>left.svg</file>
+        <file>right.svg</file>
+        <file>up.svg</file>
+        <file>delete.svg</file>
+        <file>down.svg</file>
+        <file>download.svg</file>
+        <file>repeat.svg</file>
+        <file>stats.svg</file>
+        <file>time.svg</file>
+        <file>close.svg</file>
+        <file>rewind.svg</file>
+        <file>language.svg</file>
+        <file>keyboard.svg</file>
+        <file>appearance.svg</file>
+        <file>tweaks.svg</file>
+        <file>add.svg</file>
+        <file>medal.svg</file>
+        <file>edit.svg</file>
+        <file>save.svg</file>
+        <file>save-as.svg</file>
+        <file>undo.svg</file>
+        <file>redo.svg</file>
+    </qresource>
+    <qresource prefix="/icons/open-typer">
+        <file>index.theme</file>
+    </qresource>
+    <qresource prefix="/res/images">
+        <file>icon.ico</file>
+    </qresource>
+</RCC>

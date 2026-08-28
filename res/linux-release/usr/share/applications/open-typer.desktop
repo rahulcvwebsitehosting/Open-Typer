@@ -1,0 +1,9 @@
+#!/usr/bin/env xdg-open
+[Desktop Entry]
+Name=Open-Typer
+Exec=/usr/bin/open-typer %U
+Terminal=false
+Type=Application
+Icon=/usr/share/pixmaps/open-typer.png
+Comment=Typewriting tutor application
+Categories=Education;

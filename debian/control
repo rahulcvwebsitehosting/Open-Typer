@@ -1,0 +1,13 @@
+Source: open-typer
+Section: education
+Priority: optional
+Maintainer: Rahul Shyam <rahulshyamcv@gmail.com>
+Build-Depends: debhelper (>= 10), git, build-essential, g++, libssl-dev, qttools5-dev-tools, qtbase5-dev, qtdeclarative5-dev, qtquickcontrols2-5-dev, libqt5charts5-dev
+Standards-Version: 4.4.1
+Homepage: <insert the upstream URL, if relevant>
+Vcs-Git: https://github.com/rahulcvwebsitehosting/Open-Typer.git
+
+Package: open-typer
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, qml-module-qtquick2, qml-module-qtquick-controls2, qml-module-qtquick-layouts, qml-module-qtquick-window2, qml-module-qtgraphicaleffects, qml-module-qt-labs-platform, qml-module-qtcharts
+Description: Free and open source typing tutor
