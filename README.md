@@ -112,6 +112,16 @@ graph TD
 - 🖨️ **Export & Print** — `ExportDialog`, `ExportTable`, QML `Print`
 - 🔒 **Offline-first** — no telemetry leaves device; models stay local (like EduBeam)
 
+### ⏱ NEW 5.3.2 — Para Time Attack (typing.com × LiveChat × Typewizz)
+
+> **Like para with time limit + WPM/error** — deep-analyzed from `typing.com/student/tests` (1/3/5 min + Page), `livechat.com/typing-speed-test` (60s, WPM=corrected CPM/5, 1000 common words), `typewizz.com/typing-test` (1 min, Bronze 200 CPM 96.5% / Silver 250 98.5% / Gold 350 99.5%).
+
+- **File → Para Time Attack...** / **Test → Quick 60s**: dialog with `Time: 15s/30s/60s/2m30s/3m/5m/10m/Custom`, `Source: Random Words (1000 common) / Paragraph Prose (Typewizz continuous) / Current Exercise / Custom File`, `Length: Short 150 / Medium 300 / Long 600 / Full Page` (no timer, typing.com Page)
+- **Live HUD:** `WPM (net)` + `CPM (net/gross)` + `Accuracy` + `Time remaining` + `Progress bar` (red <10s) + `Gold/Silver/Bronze` preview — LiveChat dual CPM + Typewizz cert live
+- **Paragraph engine:** `generate_random_para(300, "words")` (LiveChat 1000 words) or `Paragraph Prose` (concatenated `res/packs` Text sublessons, Typewizz style) or `Current Exercise` repeated, wrapped at 60 via `ConfigParser::initExercise`
+- **End card:** `WPM/CPM gross/net`, `Accuracy`, `Errors`, `Error words`, `Certificate` (Gold 350 99.5% top 8% / Silver 250 98.5% top 21% / Bronze 200 96.5% top 39%) + `Retry / Next Para / View Error Words` — Typewizz cert + LiveChat global scores (Supabase-ready)
+- **Formulas:** `CPM = correct/min`, `WPM = CPM/5` (de-facto LiveChat), `Accuracy = correct/typed` — Gross vs Net shown, timeout or completion triggers certificate — `python/open_typer.py:113` `wpm_calc/cpm_calc/cert_for`
+
 ## 🛠️ Technical Specifications
 
 | Layer | Choice | Why |
