@@ -21,6 +21,7 @@
 #include <QQmlEngine>
 #include "ValidatorModule.h"
 #include "internal/ExerciseValidator.h"
+#include "SmartAnalyzer.h"
 #include "global/ISettings.h"
 
 std::string ValidatorModule::moduleName() const
@@ -44,4 +45,6 @@ void ValidatorModule::registerUiTypes()
 	qmlRegisterUncreatableType<MistakeRecord>("OpenTyper.Validator", 1, 0, "MistakeRecord", "Please use QmlUtils.createMistakeRecord()");
 #endif
 	qRegisterMetaType<QList<MistakeRecord>>();
+	// SmartAnalyzer — standalone, does NOT disturb timed-para validator changes
+	qmlRegisterType<SmartAnalyzer>("OpenTyper.Validator", 1, 0, "SmartAnalyzer");
 }

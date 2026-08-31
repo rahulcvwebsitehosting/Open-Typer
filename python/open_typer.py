@@ -5,12 +5,8 @@ Tkinter implementation that mirrors the Qt/QML Open-Typer logic.
 Pack parsing based on ConfigParser.cpp logic.
 """
 import os, sys, time, webbrowser, random
-import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
-
 # --- Smart Analysis engine (isolated, does not disturb timed para) ---
 try:
-    # when run as `python -m python.open_typer` or `python open_typer.py`
     from python.smart_analysis import analyze_text, get_global_analyzer  # type: ignore
     SMART_AVAILABLE = True
 except Exception:
@@ -19,10 +15,10 @@ except Exception:
         SMART_AVAILABLE = True
     except Exception as _e:
         SMART_AVAILABLE = False
-        analyze_text = None  # type: ignore
-        def get_global_analyzer():  # type: ignore
-            return None
-        print(f"[SmartAnalysis] disabled: {_e}")
+        analyze_text = None
+        get_global_analyzer = None
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
 
 # --- Branding ---
 VERSION = "5.3.2"
@@ -68,18 +64,13 @@ def generate_random_words(num_words=50, word_pool=None):
     return " ".join(random.choice(pool) for _ in range(num_words))
 
 def generate_random_para(target_chars=300, source="words"):
-    # source: "words" = LiveChat random words
-    # "prose" = continuous pack prose
-    # For words, generate until target_chars
     if source=="words":
         words=[]
         while len(" ".join(words)) < target_chars:
             words.append(random.choice(COMMON_WORDS))
         txt=" ".join(words)
-        # Trim to target
         return txt[:target_chars].rsplit(" ",1)[0] if len(txt)>target_chars else txt
     else:
-        # prose will be handled by caller concatenating pack texts
         return generate_random_words(target_chars//5)
 
 def resource_path(relative):
@@ -316,6 +307,8 @@ class TimedParaDialog(tk.Toplevel):
 
 
 # ── Smart Analysis Dialog — isolated from timed-para logic ─────────
+
+
 class SmartAnalysisDialog(tk.Toplevel):
     """Shows which letters you flub most + *why* (adjacent key / Shift / caps / transposition)."""
     def __init__(self, parent, target: str, typed: str, elapsed: float = 0):
@@ -716,12 +709,97 @@ class SmartAnalysisDialog(tk.Toplevel):
         bf.grid(row=0, column=8, padx=10)
         ttk.Button(bf, text="⟳ Restart", command=self._restart).pack(side="left", padx=2)
         ttk.Button(bf, text="‹ Prev", command=lambda: self._nav(-1)).pack(side="left", padx=2)
+
+class TypingApp(tk.Tk):
+    def __init__(self, packs):
+        super().__init__()
+        self.packs=packs
+        self.pack_names=sorted(packs.keys())
+        if not self.pack_names:
+            messagebox.showerror("No packs", "No lesson packs found. Place res/packs beside exe or use File→Open")
+            self.pack_names=["en_US-default-A"]
+            self.packs={"en_US-default-A": [{"lesson":1,"sub":1,"ex":1,"text":"ff jj ff jj","raw":"ff jj","desc":"","limit":120,"line_len":60}]}
+        self.title(f"Open-Typer {VERSION} — by {AUTHOR}")
+        try:
+            self.iconbitmap(resource_path("res/icons/icon.ico"))
+        except:
+            pass
+        self.geometry("920x700")
+        self.minsize(860,600)
+        # theme
+        self.is_dark=False
+        self.style=ttk.Style()
+        try:
+            self.style.theme_use("clam")
+        except: pass
+        self.configure(bg="#f5f5f5")
+        self.current_text=""
+        self.current_entry=""
+        self.start_time=None
+        self.errors=0
+        self.typed=0
+        self.history=[]
+        self.current_pack=self.pack_names[0]
+        self.current_lesson=1
+        self.current_sub=1
+        self.current_ex=1
+        self._build_ui()
+        self._load_exercise()
+        self.bind("<Key>", self._global_key)
+
+    def _build_ui(self):
+        # Top branding bar
+        top = tk.Frame(self, bg="#0f172a", height=56)
+        top.pack(fill="x", side="top")
+        top.pack_propagate(False)
+        tk.Label(top, text="⌨ Open-Typer", fg="white", bg="#0f172a", font=("Segoe UI", 16, "bold")).pack(side="left", padx=16, pady=8)
+        tk.Label(top, text=f"v{VERSION}  •  by {AUTHOR}", fg="#93c5fd", bg="#0f172a", font=("Segoe UI", 9)).pack(side="left", pady=8)
+        # Portfolio button
+        btnf = tk.Frame(top, bg="#0f172a")
+        btnf.pack(side="right", padx=12)
+        for txt, url in [("Portfolio", PORTFOLIO), ("GitHub", GITHUB), ("About", None)]:
+            b = tk.Button(btnf, text=txt, bg="#1e40af" if txt=="Portfolio" else "#1e293b", fg="white", relief="flat", padx=10, pady=4, font=("Segoe UI", 9, "bold"), cursor="hand2", command=lambda u=url, t=txt: self._open_top(t,u))
+            b.pack(side="left", padx=4)
+            b.bind("<Enter>", lambda e, b=b: b.config(bg="#2563eb"))
+            b.bind("<Leave>", lambda e, b=b, t=txt: b.config(bg="#1e40af" if t=="Portfolio" else "#1e293b"))
+
+        # Controls frame
+        ctrl = ttk.Frame(self, padding=10)
+        ctrl.pack(fill="x")
+        # Pack selector
+        ttk.Label(ctrl, text="Pack:").grid(row=0, column=0, sticky="w", padx=4)
+        self.pack_var=tk.StringVar(value=self.current_pack)
+        self.pack_combo=ttk.Combobox(ctrl, textvariable=self.pack_var, values=self.pack_names, state="readonly", width=22)
+        self.pack_combo.grid(row=0, column=1, padx=4)
+        self.pack_combo.bind("<<ComboboxSelected>>", self._on_pack_change)
+
+        ttk.Label(ctrl, text="Lesson:").grid(row=0, column=2, padx=4)
+        self.lesson_var=tk.StringVar()
+        self.lesson_combo=ttk.Combobox(ctrl, textvariable=self.lesson_var, state="readonly", width=8)
+        self.lesson_combo.grid(row=0, column=3, padx=4)
+        self.lesson_combo.bind("<<ComboboxSelected>>", self._on_lesson_change)
+
+        ttk.Label(ctrl, text="Sublesson:").grid(row=0, column=4, padx=4)
+        self.sub_var=tk.StringVar()
+        self.sub_combo=ttk.Combobox(ctrl, textvariable=self.sub_var, state="readonly", width=10)
+        self.sub_combo.grid(row=0, column=5, padx=4)
+        self.sub_combo.bind("<<ComboboxSelected>>", self._on_sub_change)
+
+        ttk.Label(ctrl, text="Exercise:").grid(row=0, column=6, padx=4)
+        self.ex_var=tk.StringVar()
+        self.ex_combo=ttk.Combobox(ctrl, textvariable=self.ex_var, state="readonly", width=8)
+        self.ex_combo.grid(row=0, column=7, padx=4)
+        self.ex_combo.bind("<<ComboboxSelected>>", self._on_ex_change)
+
+        # Buttons
+        bf = ttk.Frame(ctrl)
+        bf.grid(row=0, column=8, padx=10)
+        ttk.Button(bf, text="⟳ Restart", command=self._restart).pack(side="left", padx=2)
+        ttk.Button(bf, text="‹ Prev", command=lambda: self._nav(-1)).pack(side="left", padx=2)
         ttk.Button(bf, text="Next ›", command=lambda: self._nav(1)).pack(side="left", padx=2)
         ttk.Button(bf, text="Theme", command=self._toggle_theme).pack(side="left", padx=2)
-        # Timed Para Attack (typing.com / LiveChat / Typewizz)
         ttk.Button(bf, text="⏱ Para Time Attack", command=self._start_timed_para_dialog).pack(side="left", padx=6)
-        # Smart Analysis — isolated (does not interfere with timed para)
-        ttk.Button(bf, text="🧠 Smart Analysis", command=self._show_smart_analysis).pack(side="left", padx=6)
+        ttk.Button(bf, text="🧠 Smart Analysis", command=self._show_smart_analysis).pack(side="left", padx=2)
 
         ctrl.columnconfigure(8, weight=1)
 
@@ -735,10 +813,9 @@ class SmartAnalysisDialog(tk.Toplevel):
         self.time_var=tk.StringVar(value="Time: 00:00")
         self.err_var=tk.StringVar(value="Errors: 0")
         for var in [self.wpm_var, self.cpm_var, self.acc_var, self.time_var, self.err_var]:
-            tk.Label(stats, textvariable=var, bg="#e2e8f0", fg="#0f172a", font=("Consolas", 10, "bold")).pack(side="left", padx=10, pady=6)
+            tk.Label(stats, textvariable=var, bg="#e2e8f0", fg="#0f172a", font=("Consolas", 10, "bold")).pack(side="left", padx=16, pady=6)
         self.progress_var=tk.StringVar(value="Idle")
         tk.Label(stats, textvariable=self.progress_var, bg="#e2e8f0", fg="#475569", font=("Segoe UI", 9)).pack(side="right", padx=12)
-        # Progress bar for timed mode (Typewizz countdown)
         self.time_progress = ttk.Progressbar(self, mode="determinate", maximum=100)
         self.time_progress.pack(fill="x", padx=10, pady=(0,4))
 
@@ -795,12 +872,10 @@ class SmartAnalysisDialog(tk.Toplevel):
         testm.add_command(label="Quick 60s — Paragraph Prose (Typewizz)", command=lambda: self._quick_timed(60, "Paragraph Prose (Typewizz continuous)", 300))
         testm.add_command(label="3 min — Paragraph Prose", command=lambda: self._quick_timed(180, "Paragraph Prose (Typewizz continuous)", 600))
         menubar.add_cascade(label="Test", menu=testm)
-        # Analysis menu — isolated from Test menu (no conflict)
         analysism = tk.Menu(menubar, tearoff=0)
-        analysism.add_command(label="🧠 Smart Analysis — This Exercise", command=self._show_smart_analysis)
-        analysism.add_command(label="📊 Session Overview (all exercises)", command=self._show_session_analysis)
-        analysism.add_separator()
-        analysism.add_command(label="★ Practice Weak Letters (Drill)", command=self._practice_weak_letters)
+        analysism.add_command(label="Smart Analysis...", command=self._show_smart_analysis)
+        analysism.add_command(label="Session Analysis...", command=self._show_session_analysis)
+        analysism.add_command(label="Practice Weak Letters", command=self._practice_weak_letters)
         menubar.add_cascade(label="Analysis", menu=analysism)
         helpm = tk.Menu(menubar, tearoff=0)
         helpm.add_command(label="About Open-Typer...", command=self._show_about)
@@ -897,14 +972,15 @@ class SmartAnalysisDialog(tk.Toplevel):
 
     def _load_exercise(self):
         # Cancel timed mode if active
-        if self.timer_job:
+        if getattr(self, 'timer_job', None):
             try: self.after_cancel(self.timer_job)
             except: pass
             self.timer_job=None
         self.is_timed_para=False
         self.time_limit=0
         self.time_remaining=0
-        self.time_progress.config(value=0)
+        try: self.time_progress.config(value=0)
+        except: pass
         entries=self.packs.get(self.current_pack, [])
         found=None
         for en in entries:
@@ -947,214 +1023,6 @@ class SmartAnalysisDialog(tk.Toplevel):
         self._update_stats()
         self.after(200, self._update_timer)
 
-    # === Timed Para Time Attack — typing.com 1/3/5 min + LiveChat 60s + Typewizz 1 min cert ===
-    def _start_timed_para_dialog(self):
-        dlg=TimedParaDialog(self, self.packs)
-        res=dlg.get()
-        if res:
-            secs, source, target = res
-            self._quick_timed(secs, source, target)
-
-    def _quick_timed(self, secs, source, target):
-        self._start_timed_para(secs, source, target)
-
-    def _start_timed_para(self, time_limit, source, target_chars):
-        # Cancel previous
-        if self.timer_job:
-            try: self.after_cancel(self.timer_job)
-            except: pass
-        # Generate paragraph
-        para=""
-        if "Random Words" in source:
-            para=generate_random_para(target_chars, "words")
-        elif "Paragraph Prose" in source:
-            # Concatenate pack prose until target
-            entries=[]
-            for lst in self.packs.values():
-                for en in lst:
-                    # Only Text sublessons (4) are prose-like
-                    if en["sub"]==4 or en["sub"]==3:
-                        entries.append(en["text"])
-            if entries:
-                # shuffle and join
-                random.shuffle(entries)
-                para=""
-                for e in entries:
-                    if len(para)+len(e)+1 <= target_chars:
-                        para+= (" " if para else "")+e
-                    else:
-                        break
-                if not para:
-                    para=entries[0][:target_chars]
-            else:
-                para=generate_random_para(target_chars, "words")
-        elif "Current Exercise" in source:
-            # Use current exercise text repeated to target
-            entries=self.packs.get(self.current_pack, [])
-            cur=None
-            for en in entries:
-                if en["lesson"]==self.current_lesson and en["sub"]==self.current_sub and en["ex"]==self.current_ex:
-                    cur=en; break
-            base=cur["text"] if cur else "The quick brown fox jumps over the lazy dog. "
-            para=""
-            while len(para) < target_chars:
-                para+= (" " if para else "")+base
-            para=para[:target_chars].rsplit(" ",1)[0]
-        elif "Custom File" in source:
-            path=filedialog.askopenfilename(title="Open para text", filetypes=[("Text","*.txt"),("All","*.*")])
-            if path and os.path.isfile(path):
-                try:
-                    with open(path, encoding="utf-8", errors="ignore") as f:
-                        txt=f.read().strip().replace("\r","").replace("\n"," ")
-                    para=txt[:target_chars] if target_chars< len(txt) else txt
-                except Exception as e:
-                    messagebox.showerror("Error", str(e)); return
-            else:
-                return
-        else:
-            para=generate_random_para(target_chars, "words")
-
-        # Wrap at 60 (like livechat paragraph)
-        self.current_text=self._wrap_text(para, 60)
-        self.is_timed_para=True
-        self.time_limit=time_limit  # 0 = untimed (typing.com Page Test)
-        self.time_remaining=time_limit
-        self.timed_source=source
-        # Update display
-        self.display.config(state="normal")
-        self.display.delete("1.0","end")
-        self.display.insert("1.0", self.current_text)
-        self.display.tag_add("pending","1.0","end")
-        self.display.tag_remove("correct","1.0","end")
-        self.display.tag_remove("incorrect","1.0","end")
-        self.display.tag_remove("current","1.0","end")
-        if self.current_text:
-            self.display.tag_add("current","1.0","1.1")
-            self.display.tag_remove("pending","1.0","1.1")
-        self.display.config(state="disabled")
-        self.input.delete("1.0","end")
-        self.input.focus_set()
-        self.start_time=None
-        self.errors=0
-        self.typed=0
-        self.time_progress.config(maximum=max(1,time_limit) if time_limit else 100, value=0)
-        if time_limit==0:
-            self.progress_var.set(f"Para — {source} — Full Page — {len(self.current_text)} chars (no timer)")
-            self.time_var.set("Time: --:--")
-        else:
-            mins, secs = divmod(time_limit,60)
-            self.progress_var.set(f"⏱ Para Time Attack — {source} — {mins:02d}:{secs:02d} — {len(self.current_text)} chars")
-            self.time_var.set(f"Time: {mins:02d}:{secs:02d}")
-        self._update_stats()
-        self.after(200, self._update_timer)
-        # Focus
-
-    def _tick_timed(self):
-        if not self.is_timed_para or self.time_limit==0 or self.start_time is None:
-            return
-        elapsed=time.time()-self.start_time
-        remaining=max(0, self.time_limit - elapsed)
-        self.time_remaining=remaining
-        mins, secs = divmod(int(remaining),60)
-        self.time_var.set(f"Time: {mins:02d}:{secs:02d}")
-        # progress bar: elapsed / limit
-        pct = min(100, elapsed/self.time_limit*100) if self.time_limit else 0
-        self.time_progress.config(value=elapsed)
-        # color red when <10s
-        if remaining<=10 and remaining>0:
-            self.time_progress.config(style="red.Horizontal.TProgressbar")
-        if remaining<=0:
-            self._on_complete_timed(timeout=True)
-        else:
-            self.timer_job=self.after(100, self._tick_timed)
-
-    def _on_complete_timed(self, timeout=False):
-        if self.timer_job:
-            try: self.after_cancel(self.timer_job)
-            except: pass
-            self.timer_job=None
-        elapsed=time.time()-self.start_time if self.start_time else self.time_limit
-        if timeout:
-            elapsed=self.time_limit
-        # Correct chars
-        target=self.current_text
-        typed_text=self.input.get("1.0","end-1c")
-        correct=sum(1 for a,b in zip(typed_text, target) if a==b)
-        # For timeout, typed may be less than target; correct is up to typed length
-        typed_len=len(typed_text)
-        # For LiveChat / Typewizz, CPM/WPM based on correct chars
-        cpm = cpm_calc(correct, elapsed)
-        cpm_gross = cpm_calc(typed_len, elapsed)
-        wpm = wpm_calc(correct, elapsed)
-        wpm_gross = wpm_calc(typed_len, elapsed)
-        acc = (correct/typed_len*100) if typed_len else 100
-        cert=cert_for(cpm, acc)
-        # Error words
-        target_words=target.split()
-        typed_words=typed_text.split()
-        err_words=sum(1 for a,b in zip(typed_words, target_words) if a!=b)
-        # --- Smart Analysis for timed para (isolated) ---
-        try:
-            if SMART_AVAILABLE and analyze_text and typed_text and target:
-                rep = analyze_text(target, typed_text)
-                self.last_smart_report = rep
-                self.smart_session_reports.append(rep)
-                self._last_typed = typed_text
-                self._last_target = target
-        except Exception as e:
-            print(f"[SmartAnalysis timed] {e}")
-        hist=f"⏱ PARA {self.time_limit}s {self.timed_source[:12]} — WPM {wpm:.0f} (gross {wpm_gross:.0f}) CPM {cpm:.0f} Acc {acc:.1f}% Err {self.errors} Cert {cert or '—'}"
-        self.history.insert(0, hist)
-        self.history=self.history[:5]
-        self.history_label.config(text="\n".join(self.history))
-        # Build certificate message like Typewizz
-        cert_msg=""
-        if cert:
-            cert_msg=f"\nCertificate: {cert} ✅\n"
-            if cert=="Gold": cert_msg+="Gold: 350 CPM 99.5% — top 8%\n"
-            elif cert=="Silver": cert_msg+="Silver: 250 CPM 98.5% — top 21%\n"
-            else: cert_msg+="Bronze: 200 CPM 96.5% — top 39%\n"
-        else:
-            # Show next threshold
-            cert_msg="\nCertificate: —\nNext: Bronze 200 CPM 96.5%\n"
-        # Smart hint
-        smart_hint=""
-        try:
-            if self.last_smart_report:
-                rr=self.last_smart_report
-                worst = rr.worst_letters if hasattr(rr,'worst_letters') else rr.get('worst_letters',[])
-                cat = rr.category_counts if hasattr(rr,'category_counts') else rr.get('category_counts',{})
-                if worst:
-                    top = ", ".join(ch for ch,_ in worst[:3])
-                    top_cat = max(cat, key=lambda k: cat[k]) if cat else ""
-                    label_map = {"adjacent_key":"adjacent keys","shift_case":"Shift/Caps","shift_symbol":"Symbol Shift","transposition":"swapped letters"}
-                    smart_hint = f"\n🧠 Smart: weakest → {top}  •  {label_map.get(top_cat, top_cat)}\n"
-        except Exception:
-            pass
-        msg = f"{'Time up!' if timeout else 'Completed!'}\n\nSource: {self.timed_source}\nTime limit: {self.time_limit}s  Elapsed: {int(elapsed//60):02d}:{int(elapsed%60):02d}\nChars: {typed_len}/{len(target)} (correct {correct})\n\nWPM: {wpm:.0f} (gross {wpm_gross:.0f})\nCPM: {cpm:.0f} (gross {cpm_gross:.0f})\nAccuracy: {acc:.1f}%\nErrors: {self.errors}  Error words: {err_words}{smart_hint}\n{cert_msg}\nRetry?"
-        # If errors, offer smart analysis first
-        if self.errors>0 and SMART_AVAILABLE and self.last_smart_report:
-            if messagebox.askyesno("Time Attack Completed — Smart Analysis", msg + "\nOpen Smart Analysis?"):
-                try:
-                    SmartAnalysisDialog(self, target, typed_text, elapsed)
-                except Exception as e:
-                    messagebox.showerror("Smart Analysis", str(e))
-                if messagebox.askyesno("Retry?", "Retry same Time Attack (new para)?"):
-                    self._start_timed_para(self.time_limit, self.timed_source, len(self.current_text))
-                    return
-                else:
-                    self.is_timed_para=False
-                    self.time_progress.config(value=0)
-                    self._load_exercise()
-                    return
-        if messagebox.askyesno("Time Attack Completed", msg):
-            # Restart same para with same settings but new random para
-            self._start_timed_para(self.time_limit, self.timed_source, len(self.current_text))
-        else:
-            self.is_timed_para=False
-            self.time_progress.config(value=0)
-            self._load_exercise()
-
     def _wrap_text(self, text, line_len):
         # Mimic ConfigParser::initExercise word wrap
         words=text.replace("\n"," \n ").split(" ")
@@ -1185,7 +1053,7 @@ class SmartAnalysisDialog(tk.Toplevel):
     def _on_keypress(self, event):
         if self.start_time is None and event.char and event.keysym not in ("BackSpace","Shift_L","Shift_R","Control_L","Control_R","Alt_L","Alt_R"):
             self.start_time=time.time()
-            if self.is_timed_para and self.time_limit>0:
+            if getattr(self, 'is_timed_para', False) and getattr(self, 'time_limit', 0)>0:
                 self._tick_timed()
 
     def _on_input(self, event=None):
@@ -1221,15 +1089,9 @@ class SmartAnalysisDialog(tk.Toplevel):
         self.errors=errs
         self.typed=typed_len
         self._update_stats()
-        # Check completion — for timed para, finish early if paragraph completed before timeout
-        if self.is_timed_para:
-            if current == target and len(target)>0:
-                self._on_complete_timed(timeout=False)
-                return
-        else:
-            if current == target and len(target)>0:
-                self._on_complete()
-                return
+        # Check completion
+        if current == target and len(target)>0:
+            self._on_complete()
         # Also handle if typed longer than target -> extra errors
         if len(current) > len(target):
             self.err_var.set(f"Errors: {errs} (+{len(current)-len(target)} extra)")
@@ -1239,50 +1101,30 @@ class SmartAnalysisDialog(tk.Toplevel):
         errs=self.errors
         total=len(self.current_text) if self.current_text else 1
         elapsed = time.time()-self.start_time if self.start_time else 0
-        # Accuracy (typing.com / LiveChat)
+        # Accuracy
         acc = max(0, (typed - errs) / max(1, typed) * 100) if typed>0 else 100
-        self.acc_var.set(f"Acc: {acc:.1f}%")
+        self.acc_var.set(f"Accuracy: {acc:.1f}%")
         self.err_var.set(f"Errors: {errs}")
-        # WPM/CPM — Gross vs Net (LiveChat de-facto: WPM = corrected CPM /5)
+        # WPM: (correct chars /5) / minutes
         correct = max(0, typed - errs)
         minutes = elapsed/60 if elapsed>0 else 1/60
         wpm = (correct/5) / minutes if minutes>0 else 0
-        cpm = correct / minutes if minutes>0 else 0
-        cpm_gross = typed / minutes if minutes>0 else 0
+        # But if not started, wpm 0
         if self.start_time is None:
-            wpm=0; cpm=0; cpm_gross=0
+            wpm=0
         self.wpm_var.set(f"WPM: {wpm:.0f}")
-        try:
-            self.cpm_var.set(f"CPM: {cpm:.0f} ({cpm_gross:.0f} gross)")
-        except:
-            pass
-        # Progress — lesson mode vs timed para
-        if self.is_timed_para and self.time_limit>0:
-            # Show remaining + cert hint (Typewizz)
-            elapsed = time.time()-self.start_time if self.start_time else 0
-            remaining = max(0, self.time_limit - elapsed)
-            mins, secs = divmod(int(remaining),60)
-            # cert preview
-            cur_cpm = cpm
-            cert = cert_for(cur_cpm, acc) if typed>0 else None
-            cert_txt = f" • {cert} ✅" if cert else ""
-            self.progress_var.set(f"⏱ PARA {self.time_limit}s {self.timed_source[:18]} — {remaining:.0f}s left — {typed}/{len(self.current_text)} chars{cert_txt}")
-        else:
-            pct = min(100, typed/len(self.current_text)*100) if self.current_text else 0
-            if self.is_timed_para and self.time_limit==0:
-                self.progress_var.set(f"Para — Full Page — {typed}/{len(self.current_text)} chars — {pct:.0f}%")
-            else:
-                self.progress_var.set(f"Lesson {self.current_lesson} • Sub {self.current_sub} • Ex {self.current_ex} — {pct:.0f}%  —  {len(self.current_text)} chars")
+        # Progress
+        pct = min(100, typed/len(self.current_text)*100) if self.current_text else 0
+        self.progress_var.set(f"Lesson {self.current_lesson} • Sub {self.current_sub} • Ex {self.current_ex} — {pct:.0f}%  —  {len(self.current_text)} chars")
 
     def _update_timer(self):
-        if self.is_timed_para and self.time_limit>0:
+        if getattr(self, 'is_timed_para', False) and getattr(self, 'time_limit', 0)>0:
             if self.start_time:
                 elapsed=time.time()-self.start_time
                 remaining=max(0, self.time_limit - elapsed)
                 mins, secs = divmod(int(remaining),60)
                 self.time_var.set(f"Time: {mins:02d}:{secs:02d} / {self.time_limit//60:02d}:{self.time_limit%60:02d}")
                 self._update_stats()
-                # progress bar handled in _tick_timed
             else:
                 mins, secs = divmod(self.time_limit,60)
                 self.time_var.set(f"Time: {mins:02d}:{secs:02d}")
@@ -1304,208 +1146,31 @@ class SmartAnalysisDialog(tk.Toplevel):
     def _on_complete(self):
         elapsed=time.time()-self.start_time if self.start_time else 0
         correct=max(0, self.typed - self.errors)
+        # Smart analysis capture (isolated, does not disturb timed para)
+        if SMART_AVAILABLE and analyze_text:
+            try:
+                typed_text=self.input.get("1.0","end-1c")
+                rep=analyze_text(self.current_text, typed_text)
+                self.last_smart_report=rep
+                self.smart_session_reports.append(rep)
+                try: get_global_analyzer().add_report(rep)
+                except: pass
+            except Exception as e:
+                print("smart analysis error", e)
         acc=(self.typed - self.errors)/max(1,self.typed)*100 if self.typed else 100
         wpm=(correct/5)/(elapsed/60) if elapsed>0 else 0
-        # --- Smart Analysis — compute for this exercise (non-intrusive) ---
-        typed_text=self.input.get("1.0","end-1c") if hasattr(self,'input') else ""
-        target_text=self.current_text
-        try:
-            if SMART_AVAILABLE and analyze_text and typed_text and target_text:
-                rep = analyze_text(target_text, typed_text)
-                self.last_smart_report = rep
-                self.smart_session_reports.append(rep)
-                # also push to global analyzer
-        except Exception as e:
-            print(f"[SmartAnalysis] compute failed: {e}")
-            rep=None
         # Add to history
         hist = f"{self.current_pack} L{self.current_lesson}.{self.current_sub}.{self.current_ex} — WPM {wpm:.0f} Acc {acc:.1f}% Time {int(elapsed//60):02d}:{int(elapsed%60):02d}"
         self.history.insert(0, hist)
         self.history=self.history[:5]
         self.history_label.config(text="\n".join(self.history) if self.history else "—")
-        # Show dialog — include smart hint without disturbing flow
-        smart_hint=""
-        try:
-            if self.last_smart_report:
-                rr=self.last_smart_report
-                worst = rr.worst_letters if hasattr(rr,'worst_letters') else rr.get('worst_letters',[])
-                cat = rr.category_counts if hasattr(rr,'category_counts') else rr.get('category_counts',{})
-                if worst:
-                    top = ", ".join(ch for ch,_ in worst[:3])
-                    top_cat = max(cat, key=lambda k: cat[k]) if cat else ""
-                    label_map = {"adjacent_key":"adjacent-key fat-finger","shift_case":"Shift/Caps","shift_symbol":"Symbol Shift","transposition":"swapped letters","double_letter":"double-letter","other":"reading"}
-                    smart_hint = f"\n🧠 Smart: weakest → {top}  •  main cause: {label_map.get(top_cat, top_cat) or '—'}\n   See Analysis → Smart Analysis for why & drill."
-                else:
-                    smart_hint="\n🧠 Smart: Perfect! No weak letters."
-        except Exception:
-            pass
-        msg = f"Exercise completed!\n\nPack: {self.current_pack}\nLesson {self.current_lesson} • Sublesson {self.current_sub} • Exercise {self.current_ex}\n\nWPM: {wpm:.0f}\nAccuracy: {acc:.1f}%\nErrors: {self.errors}\nTime: {int(elapsed//60):02d}:{int(elapsed%60):02d}{smart_hint}\n\nNext exercise?"
-        # Offer smart analysis if errors
-        if self.errors>0 and SMART_AVAILABLE:
-            if messagebox.askyesno("Completed — Smart Analysis available", msg + "\n\nOpen Smart Analysis? (diagnoses adjacent keys / Shift)"):
-                self._show_smart_analysis(last=True)
-                # after dialog, ask next
-                if messagebox.askyesno("Next?", "Go to next exercise?"):
-                    self._nav(1)
-                return
+        # Show dialog
+        msg = f"Exercise completed!\n\nPack: {self.current_pack}\nLesson {self.current_lesson} • Sublesson {self.current_sub} • Exercise {self.current_ex}\n\nWPM: {wpm:.0f}\nAccuracy: {acc:.1f}%\nErrors: {self.errors}\nTime: {int(elapsed//60):02d}:{int(elapsed%60):02d}\n\nNext exercise?"
         if messagebox.askyesno("Completed", msg):
             self._nav(1)
         else:
+            # stay but allow restart
             pass
-
-    # ── Smart Analysis helpers — isolated from timed-para ─────────
-    def _show_smart_analysis(self, last=False):
-        """Open SmartAnalysisDialog for current exercise or last completed."""
-        target = self.current_text
-        typed = ""
-        elapsed = time.time()-self.start_time if self.start_time else 0
-        try:
-            typed = self.input.get("1.0","end-1c")
-        except: typed=""
-        # If exercise is completed and we have last report's texts, prefer those when 'last' flag and typed==target (cleared)
-        if last and self.last_smart_report is not None:
-            # try to use the report's drill? Actually dialog recomputes from current target/typed,
-            # but if current input is empty after completion, we need to use last typed captured at completion.
-            # We capture typed before nav; for simplicity, if typed is short (<5) and we have a cached report, show cached report via dialog override.
-            # We'll just pass the last report's drill by reconstructing target/typed from report? Instead pass current typed if empty show message.
-            if len(typed) < 5 and hasattr(self,'_last_typed') and self._last_typed:
-                typed = self._last_typed
-                target = self._last_target if hasattr(self,'_last_target') else target
-        # Also store last for fallback
-        self._last_typed = typed
-        self._last_target = target
-        if not typed or len(typed.strip())<1:
-            # if no typed yet, but we have a last report, show that report's dialog by re-feeding its texts
-            if self.last_smart_report is not None:
-                # reconstruct from last typed/target saved
-                pass
-            else:
-                messagebox.showinfo("Smart Analysis", "Type something first — then open Smart Analysis to see weakest letters & why.")
-                return
-        # require at least 5 chars vs target or we show still
-        if len(typed) < 3 and not target:
-            messagebox.showinfo("Smart Analysis", "Not enough data yet. Complete at least a few words.")
-            return
-        try:
-            dlg = SmartAnalysisDialog(self, target, typed, elapsed)
-        except Exception as e:
-            messagebox.showerror("Smart Analysis failed", str(e))
-
-    def _show_session_analysis(self):
-        """Aggregated view across session — worst letters overall."""
-        if not SMART_AVAILABLE:
-            messagebox.showinfo("Smart Analysis", "Engine not available.")
-            return
-        try:
-            ga = get_global_analyzer()
-        except Exception:
-            ga=None
-        # fallback to local session reports
-        reports = getattr(self,'smart_session_reports',[])
-        if not reports and (ga is None or not getattr(ga,'reports',[])):
-            messagebox.showinfo("Session Analysis", "No exercises completed yet. Finish one exercise to build session stats.")
-            return
-        # Build aggregated stats from global analyzer if available, else local
-        if ga and getattr(ga,'reports',[]):
-            worst = ga.aggregated_worst(topn=7)
-            total_mis = sum(ga.mistake_counter.values())
-            total = sum(ga.total_counter.values())
-            acc = ga.overall_accuracy()
-        else:
-            # aggregate locally
-            from collections import Counter
-            tc=Counter(); mc=Counter()
-            for r in reports:
-                wl = r.worst_letters if hasattr(r,'worst_letters') else r.get('worst_letters',[])
-                ls = r.letter_stats if hasattr(r,'letter_stats') else r.get('letter_stats',{})
-                for ch,st in ls.items():
-                    tc[ch]+=st.get('total',0)
-                    mc[ch]+=st.get('mistakes',0)
-            # worst
-            tmp=[]
-            for ch, tot in tc.items():
-                mis=mc.get(ch,0)
-                if mis:
-                    tmp.append((ch, {"total":tot,"mistakes":mis,"accuracy": (tot-mis)/tot*100 if tot else 0, "error_rate": mis/max(1,tot)}))
-            tmp.sort(key=lambda kv: (kv[1]["error_rate"], kv[1]["mistakes"]), reverse=True)
-            worst=tmp[:7]
-            total=sum(tc.values()); total_mis=sum(mc.values()); acc=(total-total_mis)/max(1,total)*100 if total else 100
-        if not worst:
-            messagebox.showinfo("Session Analysis", "No letter mistakes in this session — excellent!")
-            return
-        # Simple dialog showing aggregated worst
-        win=tk.Toplevel(self)
-        win.title("📊 Session Smart Analysis — All Exercises")
-        win.geometry("560x420")
-        win.transient(self); win.grab_set()
-        ttk.Label(win, text="Session Overview — weakest letters across all exercises", font=("Segoe UI", 11, "bold"), padding=12).pack(anchor="w")
-        ttk.Label(win, text=f"Overall accuracy {acc:.1f}%   Total errors {total_mis}/{total}", font=("Consolas", 10), padding=(12,0,12,8)).pack(anchor="w")
-        fr=ttk.Frame(win, padding=10)
-        fr.pack(fill="both", expand=True)
-        for idx,(ch,st) in enumerate(worst):
-            row=ttk.Frame(fr)
-            row.pack(fill="x", pady=3)
-            ttk.Label(row, text=f"'{ch}'", font=("Consolas", 12, "bold"), width=6).pack(side="left")
-            pct=st["error_rate"]*100
-            bar=tk.Canvas(row, width=260, height=16, bg="white", highlightthickness=1, highlightbackground="#cbd5e1")
-            bar.pack(side="left", padx=6)
-            bar.create_rectangle(0,0, int(pct/100*260),16, fill="#ef4444" if pct>30 else "#f97316" if pct>15 else "#facc15", outline="")
-            ttk.Label(row, text=f"{st['mistakes']}/{st['total']}  {st['accuracy']:.0f}% acc", font=("Segoe UI", 9)).pack(side="left", padx=8)
-        ttk.Button(win, text="Close", command=win.destroy).pack(pady=8)
-        win.bind("<Escape>", lambda e: win.destroy())
-
-    def _practice_weak_letters(self):
-        """Generate drill from last or session worst and load as custom exercise."""
-        if not SMART_AVAILABLE:
-            messagebox.showinfo("Practice Drill", "Smart engine not available.")
-            return
-        # Prefer last report, else session aggregate
-        rep=self.last_smart_report
-        if rep is None:
-            # try global
-            try:
-                ga=get_global_analyzer()
-                worst=ga.aggregated_worst() if ga else []
-                drill=""
-                if worst:
-                    # generate drill via analyze_text helper
-                    from smart_analysis import _generate_drill  # type: ignore
-                    drill=_generate_drill(worst)  # type: ignore
-                if not drill:
-                    messagebox.showinfo("Drill", "Finish an exercise first to detect weak letters.")
-                    return
-                # load drill
-                self._load_drill_text(drill)
-                return
-            except Exception as e:
-                messagebox.showerror("Drill error", str(e)); return
-        # rep available
-        drill = rep.drill_text if hasattr(rep,'drill_text') else rep.get('drill_text','') if isinstance(rep, dict) else ""
-        if not drill:
-            # generate on fly
-            try:
-                worst = rep.worst_letters if hasattr(rep,'worst_letters') else rep.get('worst_letters',[])
-                from smart_analysis import _generate_drill  # type: ignore
-                drill=_generate_drill(worst)
-            except Exception:
-                drill=""
-        if not drill:
-            messagebox.showinfo("Drill", "No weak letters — you’re perfect! Try a harder pack.")
-            return
-        self._load_drill_text(drill)
-
-    def _load_drill_text(self, drill: str):
-        custom_name="Smart Drill — Weak Letters"
-        entry={"lesson":1,"sub":1,"ex":1,"text": drill,"raw": drill,"desc":"Smart drill","limit":120,"line_len":60,"repeat":False,"repeat_type":""}
-        self.packs[custom_name]=[entry]
-        self.pack_names=sorted(self.packs.keys())
-        self.pack_combo["values"]=self.pack_names
-        self.current_pack=custom_name
-        self.pack_var.set(custom_name)
-        self.current_lesson=1; self.current_sub=1; self.current_ex=1
-        self._refresh_combos()
-        self._load_exercise()
-        messagebox.showinfo("Drill loaded", f"Drill for weakest letters loaded ({len(drill)} chars).\n\n{drill[:140]}...")
 
     def _open_custom(self):
         path=filedialog.askopenfilename(title="Open custom text", filetypes=[("Text files","*.txt"),("All files","*.*")])

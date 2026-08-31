@@ -5,12 +5,8 @@ Tkinter implementation that mirrors the Qt/QML Open-Typer logic.
 Pack parsing based on ConfigParser.cpp logic.
 """
 import os, sys, time, webbrowser, random
-import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
-
 # --- Smart Analysis engine (isolated, does not disturb timed para) ---
 try:
-    # when run as `python -m python.open_typer` or `python open_typer.py`
     from python.smart_analysis import analyze_text, get_global_analyzer  # type: ignore
     SMART_AVAILABLE = True
 except Exception:
@@ -19,10 +15,10 @@ except Exception:
         SMART_AVAILABLE = True
     except Exception as _e:
         SMART_AVAILABLE = False
-        analyze_text = None  # type: ignore
-        def get_global_analyzer():  # type: ignore
-            return None
-        print(f"[SmartAnalysis] disabled: {_e}")
+        analyze_text = None
+        get_global_analyzer = None
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
 
 # --- Branding ---
 VERSION = "5.3.2"
@@ -68,18 +64,13 @@ def generate_random_words(num_words=50, word_pool=None):
     return " ".join(random.choice(pool) for _ in range(num_words))
 
 def generate_random_para(target_chars=300, source="words"):
-    # source: "words" = LiveChat random words
-    # "prose" = continuous pack prose
-    # For words, generate until target_chars
     if source=="words":
         words=[]
         while len(" ".join(words)) < target_chars:
             words.append(random.choice(COMMON_WORDS))
         txt=" ".join(words)
-        # Trim to target
         return txt[:target_chars].rsplit(" ",1)[0] if len(txt)>target_chars else txt
     else:
-        # prose will be handled by caller concatenating pack texts
         return generate_random_words(target_chars//5)
 
 def resource_path(relative):
@@ -316,6 +307,8 @@ class TimedParaDialog(tk.Toplevel):
 
 
 # ── Smart Analysis Dialog — isolated from timed-para logic ─────────
+
+
 class SmartAnalysisDialog(tk.Toplevel):
     """Shows which letters you flub most + *why* (adjacent key / Shift / caps / transposition)."""
     def __init__(self, parent, target: str, typed: str, elapsed: float = 0):
@@ -656,6 +649,96 @@ class SmartAnalysisDialog(tk.Toplevel):
         self.time_remaining=0
         self.timer_job=None
         self.timed_source=""
+        # Smart Analysis — cumulative across session
+        self.smart_session_reports=[]
+        self.last_smart_report=None
+        self.current_pack=self.pack_names[0]
+        self.current_lesson=1
+        self.current_sub=1
+        self.current_ex=1
+        self._build_ui()
+        self._load_exercise()
+        self.bind("<Key>", self._global_key)
+
+    def _build_ui(self):
+        # Top branding bar
+        top = tk.Frame(self, bg="#0f172a", height=56)
+        top.pack(fill="x", side="top")
+        top.pack_propagate(False)
+        tk.Label(top, text="⌨ Open-Typer", fg="white", bg="#0f172a", font=("Segoe UI", 16, "bold")).pack(side="left", padx=16, pady=8)
+        tk.Label(top, text=f"v{VERSION}  •  by {AUTHOR}", fg="#93c5fd", bg="#0f172a", font=("Segoe UI", 9)).pack(side="left", pady=8)
+        # Portfolio button
+        btnf = tk.Frame(top, bg="#0f172a")
+        btnf.pack(side="right", padx=12)
+        for txt, url in [("Portfolio", PORTFOLIO), ("GitHub", GITHUB), ("About", None)]:
+            b = tk.Button(btnf, text=txt, bg="#1e40af" if txt=="Portfolio" else "#1e293b", fg="white", relief="flat", padx=10, pady=4, font=("Segoe UI", 9, "bold"), cursor="hand2", command=lambda u=url, t=txt: self._open_top(t,u))
+            b.pack(side="left", padx=4)
+            b.bind("<Enter>", lambda e, b=b: b.config(bg="#2563eb"))
+            b.bind("<Leave>", lambda e, b=b, t=txt: b.config(bg="#1e40af" if t=="Portfolio" else "#1e293b"))
+
+        # Controls frame
+        ctrl = ttk.Frame(self, padding=10)
+        ctrl.pack(fill="x")
+        # Pack selector
+        ttk.Label(ctrl, text="Pack:").grid(row=0, column=0, sticky="w", padx=4)
+        self.pack_var=tk.StringVar(value=self.current_pack)
+        self.pack_combo=ttk.Combobox(ctrl, textvariable=self.pack_var, values=self.pack_names, state="readonly", width=22)
+        self.pack_combo.grid(row=0, column=1, padx=4)
+        self.pack_combo.bind("<<ComboboxSelected>>", self._on_pack_change)
+
+        ttk.Label(ctrl, text="Lesson:").grid(row=0, column=2, padx=4)
+        self.lesson_var=tk.StringVar()
+        self.lesson_combo=ttk.Combobox(ctrl, textvariable=self.lesson_var, state="readonly", width=8)
+        self.lesson_combo.grid(row=0, column=3, padx=4)
+        self.lesson_combo.bind("<<ComboboxSelected>>", self._on_lesson_change)
+
+        ttk.Label(ctrl, text="Sublesson:").grid(row=0, column=4, padx=4)
+        self.sub_var=tk.StringVar()
+        self.sub_combo=ttk.Combobox(ctrl, textvariable=self.sub_var, state="readonly", width=10)
+        self.sub_combo.grid(row=0, column=5, padx=4)
+        self.sub_combo.bind("<<ComboboxSelected>>", self._on_sub_change)
+
+        ttk.Label(ctrl, text="Exercise:").grid(row=0, column=6, padx=4)
+        self.ex_var=tk.StringVar()
+        self.ex_combo=ttk.Combobox(ctrl, textvariable=self.ex_var, state="readonly", width=8)
+        self.ex_combo.grid(row=0, column=7, padx=4)
+        self.ex_combo.bind("<<ComboboxSelected>>", self._on_ex_change)
+
+        # Buttons
+        bf = ttk.Frame(ctrl)
+        bf.grid(row=0, column=8, padx=10)
+        ttk.Button(bf, text="⟳ Restart", command=self._restart).pack(side="left", padx=2)
+        ttk.Button(bf, text="‹ Prev", command=lambda: self._nav(-1)).pack(side="left", padx=2)
+
+class TypingApp(tk.Tk):
+    def __init__(self, packs):
+        super().__init__()
+        self.packs=packs
+        self.pack_names=sorted(packs.keys())
+        if not self.pack_names:
+            messagebox.showerror("No packs", "No lesson packs found. Place res/packs beside exe or use File→Open")
+            self.pack_names=["en_US-default-A"]
+            self.packs={"en_US-default-A": [{"lesson":1,"sub":1,"ex":1,"text":"ff jj ff jj","raw":"ff jj","desc":"","limit":120,"line_len":60}]}
+        self.title(f"Open-Typer {VERSION} — by {AUTHOR}")
+        try:
+            self.iconbitmap(resource_path("res/icons/icon.ico"))
+        except:
+            pass
+        self.geometry("920x700")
+        self.minsize(860,600)
+        # theme
+        self.is_dark=False
+        self.style=ttk.Style()
+        try:
+            self.style.theme_use("clam")
+        except: pass
+        self.configure(bg="#f5f5f5")
+        self.current_text=""
+        self.current_entry=""
+        self.start_time=None
+        self.errors=0
+        self.typed=0
+        self.history=[]
         self.current_pack=self.pack_names[0]
         self.current_lesson=1
         self.current_sub=1
@@ -715,8 +798,8 @@ class SmartAnalysisDialog(tk.Toplevel):
         ttk.Button(bf, text="‹ Prev", command=lambda: self._nav(-1)).pack(side="left", padx=2)
         ttk.Button(bf, text="Next ›", command=lambda: self._nav(1)).pack(side="left", padx=2)
         ttk.Button(bf, text="Theme", command=self._toggle_theme).pack(side="left", padx=2)
-        # Timed Para Attack (typing.com / LiveChat / Typewizz)
         ttk.Button(bf, text="⏱ Para Time Attack", command=self._start_timed_para_dialog).pack(side="left", padx=6)
+        ttk.Button(bf, text="🧠 Smart Analysis", command=self._show_smart_analysis).pack(side="left", padx=2)
 
         ctrl.columnconfigure(8, weight=1)
 
@@ -730,10 +813,9 @@ class SmartAnalysisDialog(tk.Toplevel):
         self.time_var=tk.StringVar(value="Time: 00:00")
         self.err_var=tk.StringVar(value="Errors: 0")
         for var in [self.wpm_var, self.cpm_var, self.acc_var, self.time_var, self.err_var]:
-            tk.Label(stats, textvariable=var, bg="#e2e8f0", fg="#0f172a", font=("Consolas", 10, "bold")).pack(side="left", padx=10, pady=6)
+            tk.Label(stats, textvariable=var, bg="#e2e8f0", fg="#0f172a", font=("Consolas", 10, "bold")).pack(side="left", padx=16, pady=6)
         self.progress_var=tk.StringVar(value="Idle")
         tk.Label(stats, textvariable=self.progress_var, bg="#e2e8f0", fg="#475569", font=("Segoe UI", 9)).pack(side="right", padx=12)
-        # Progress bar for timed mode (Typewizz countdown)
         self.time_progress = ttk.Progressbar(self, mode="determinate", maximum=100)
         self.time_progress.pack(fill="x", padx=10, pady=(0,4))
 
@@ -790,6 +872,11 @@ class SmartAnalysisDialog(tk.Toplevel):
         testm.add_command(label="Quick 60s — Paragraph Prose (Typewizz)", command=lambda: self._quick_timed(60, "Paragraph Prose (Typewizz continuous)", 300))
         testm.add_command(label="3 min — Paragraph Prose", command=lambda: self._quick_timed(180, "Paragraph Prose (Typewizz continuous)", 600))
         menubar.add_cascade(label="Test", menu=testm)
+        analysism = tk.Menu(menubar, tearoff=0)
+        analysism.add_command(label="Smart Analysis...", command=self._show_smart_analysis)
+        analysism.add_command(label="Session Analysis...", command=self._show_session_analysis)
+        analysism.add_command(label="Practice Weak Letters", command=self._practice_weak_letters)
+        menubar.add_cascade(label="Analysis", menu=analysism)
         helpm = tk.Menu(menubar, tearoff=0)
         helpm.add_command(label="About Open-Typer...", command=self._show_about)
         helpm.add_command(label="Portfolio", command=lambda: webbrowser.open(PORTFOLIO))
@@ -885,14 +972,15 @@ class SmartAnalysisDialog(tk.Toplevel):
 
     def _load_exercise(self):
         # Cancel timed mode if active
-        if self.timer_job:
+        if getattr(self, 'timer_job', None):
             try: self.after_cancel(self.timer_job)
             except: pass
             self.timer_job=None
         self.is_timed_para=False
         self.time_limit=0
         self.time_remaining=0
-        self.time_progress.config(value=0)
+        try: self.time_progress.config(value=0)
+        except: pass
         entries=self.packs.get(self.current_pack, [])
         found=None
         for en in entries:
@@ -935,175 +1023,6 @@ class SmartAnalysisDialog(tk.Toplevel):
         self._update_stats()
         self.after(200, self._update_timer)
 
-    # === Timed Para Time Attack — typing.com 1/3/5 min + LiveChat 60s + Typewizz 1 min cert ===
-    def _start_timed_para_dialog(self):
-        dlg=TimedParaDialog(self, self.packs)
-        res=dlg.get()
-        if res:
-            secs, source, target = res
-            self._quick_timed(secs, source, target)
-
-    def _quick_timed(self, secs, source, target):
-        self._start_timed_para(secs, source, target)
-
-    def _start_timed_para(self, time_limit, source, target_chars):
-        # Cancel previous
-        if self.timer_job:
-            try: self.after_cancel(self.timer_job)
-            except: pass
-        # Generate paragraph
-        para=""
-        if "Random Words" in source:
-            para=generate_random_para(target_chars, "words")
-        elif "Paragraph Prose" in source:
-            # Concatenate pack prose until target
-            entries=[]
-            for lst in self.packs.values():
-                for en in lst:
-                    # Only Text sublessons (4) are prose-like
-                    if en["sub"]==4 or en["sub"]==3:
-                        entries.append(en["text"])
-            if entries:
-                # shuffle and join
-                random.shuffle(entries)
-                para=""
-                for e in entries:
-                    if len(para)+len(e)+1 <= target_chars:
-                        para+= (" " if para else "")+e
-                    else:
-                        break
-                if not para:
-                    para=entries[0][:target_chars]
-            else:
-                para=generate_random_para(target_chars, "words")
-        elif "Current Exercise" in source:
-            # Use current exercise text repeated to target
-            entries=self.packs.get(self.current_pack, [])
-            cur=None
-            for en in entries:
-                if en["lesson"]==self.current_lesson and en["sub"]==self.current_sub and en["ex"]==self.current_ex:
-                    cur=en; break
-            base=cur["text"] if cur else "The quick brown fox jumps over the lazy dog. "
-            para=""
-            while len(para) < target_chars:
-                para+= (" " if para else "")+base
-            para=para[:target_chars].rsplit(" ",1)[0]
-        elif "Custom File" in source:
-            path=filedialog.askopenfilename(title="Open para text", filetypes=[("Text","*.txt"),("All","*.*")])
-            if path and os.path.isfile(path):
-                try:
-                    with open(path, encoding="utf-8", errors="ignore") as f:
-                        txt=f.read().strip().replace("\r","").replace("\n"," ")
-                    para=txt[:target_chars] if target_chars< len(txt) else txt
-                except Exception as e:
-                    messagebox.showerror("Error", str(e)); return
-            else:
-                return
-        else:
-            para=generate_random_para(target_chars, "words")
-
-        # Wrap at 60 (like livechat paragraph)
-        self.current_text=self._wrap_text(para, 60)
-        self.is_timed_para=True
-        self.time_limit=time_limit  # 0 = untimed (typing.com Page Test)
-        self.time_remaining=time_limit
-        self.timed_source=source
-        # Update display
-        self.display.config(state="normal")
-        self.display.delete("1.0","end")
-        self.display.insert("1.0", self.current_text)
-        self.display.tag_add("pending","1.0","end")
-        self.display.tag_remove("correct","1.0","end")
-        self.display.tag_remove("incorrect","1.0","end")
-        self.display.tag_remove("current","1.0","end")
-        if self.current_text:
-            self.display.tag_add("current","1.0","1.1")
-            self.display.tag_remove("pending","1.0","1.1")
-        self.display.config(state="disabled")
-        self.input.delete("1.0","end")
-        self.input.focus_set()
-        self.start_time=None
-        self.errors=0
-        self.typed=0
-        self.time_progress.config(maximum=max(1,time_limit) if time_limit else 100, value=0)
-        if time_limit==0:
-            self.progress_var.set(f"Para — {source} — Full Page — {len(self.current_text)} chars (no timer)")
-            self.time_var.set("Time: --:--")
-        else:
-            mins, secs = divmod(time_limit,60)
-            self.progress_var.set(f"⏱ Para Time Attack — {source} — {mins:02d}:{secs:02d} — {len(self.current_text)} chars")
-            self.time_var.set(f"Time: {mins:02d}:{secs:02d}")
-        self._update_stats()
-        self.after(200, self._update_timer)
-        # Focus
-
-    def _tick_timed(self):
-        if not self.is_timed_para or self.time_limit==0 or self.start_time is None:
-            return
-        elapsed=time.time()-self.start_time
-        remaining=max(0, self.time_limit - elapsed)
-        self.time_remaining=remaining
-        mins, secs = divmod(int(remaining),60)
-        self.time_var.set(f"Time: {mins:02d}:{secs:02d}")
-        # progress bar: elapsed / limit
-        pct = min(100, elapsed/self.time_limit*100) if self.time_limit else 0
-        self.time_progress.config(value=elapsed)
-        # color red when <10s
-        if remaining<=10 and remaining>0:
-            self.time_progress.config(style="red.Horizontal.TProgressbar")
-        if remaining<=0:
-            self._on_complete_timed(timeout=True)
-        else:
-            self.timer_job=self.after(100, self._tick_timed)
-
-    def _on_complete_timed(self, timeout=False):
-        if self.timer_job:
-            try: self.after_cancel(self.timer_job)
-            except: pass
-            self.timer_job=None
-        elapsed=time.time()-self.start_time if self.start_time else self.time_limit
-        if timeout:
-            elapsed=self.time_limit
-        # Correct chars
-        target=self.current_text
-        typed_text=self.input.get("1.0","end-1c")
-        correct=sum(1 for a,b in zip(typed_text, target) if a==b)
-        # For timeout, typed may be less than target; correct is up to typed length
-        typed_len=len(typed_text)
-        # For LiveChat / Typewizz, CPM/WPM based on correct chars
-        cpm = cpm_calc(correct, elapsed)
-        cpm_gross = cpm_calc(typed_len, elapsed)
-        wpm = wpm_calc(correct, elapsed)
-        wpm_gross = wpm_calc(typed_len, elapsed)
-        acc = (correct/typed_len*100) if typed_len else 100
-        cert=cert_for(cpm, acc)
-        # Error words
-        target_words=target.split()
-        typed_words=typed_text.split()
-        err_words=sum(1 for a,b in zip(typed_words, target_words) if a!=b)
-        hist=f"⏱ PARA {self.time_limit}s {self.timed_source[:12]} — WPM {wpm:.0f} (gross {wpm_gross:.0f}) CPM {cpm:.0f} Acc {acc:.1f}% Err {self.errors} Cert {cert or '—'}"
-        self.history.insert(0, hist)
-        self.history=self.history[:5]
-        self.history_label.config(text="\n".join(self.history))
-        # Build certificate message like Typewizz
-        cert_msg=""
-        if cert:
-            cert_msg=f"\nCertificate: {cert} ✅\n"
-            if cert=="Gold": cert_msg+="Gold: 350 CPM 99.5% — top 8%\n"
-            elif cert=="Silver": cert_msg+="Silver: 250 CPM 98.5% — top 21%\n"
-            else: cert_msg+="Bronze: 200 CPM 96.5% — top 39%\n"
-        else:
-            # Show next threshold
-            cert_msg="\nCertificate: —\nNext: Bronze 200 CPM 96.5%\n"
-        msg = f"{'Time up!' if timeout else 'Completed!'}\n\nSource: {self.timed_source}\nTime limit: {self.time_limit}s  Elapsed: {int(elapsed//60):02d}:{int(elapsed%60):02d}\nChars: {typed_len}/{len(target)} (correct {correct})\n\nWPM: {wpm:.0f} (gross {wpm_gross:.0f})\nCPM: {cpm:.0f} (gross {cpm_gross:.0f})\nAccuracy: {acc:.1f}%\nErrors: {self.errors}  Error words: {err_words}\n{cert_msg}\nRetry?"
-        if messagebox.askyesno("Time Attack Completed", msg):
-            # Restart same para with same settings but new random para
-            self._start_timed_para(self.time_limit, self.timed_source, len(self.current_text))
-        else:
-            self.is_timed_para=False
-            self.time_progress.config(value=0)
-            self._load_exercise()
-
     def _wrap_text(self, text, line_len):
         # Mimic ConfigParser::initExercise word wrap
         words=text.replace("\n"," \n ").split(" ")
@@ -1134,7 +1053,7 @@ class SmartAnalysisDialog(tk.Toplevel):
     def _on_keypress(self, event):
         if self.start_time is None and event.char and event.keysym not in ("BackSpace","Shift_L","Shift_R","Control_L","Control_R","Alt_L","Alt_R"):
             self.start_time=time.time()
-            if self.is_timed_para and self.time_limit>0:
+            if getattr(self, 'is_timed_para', False) and getattr(self, 'time_limit', 0)>0:
                 self._tick_timed()
 
     def _on_input(self, event=None):
@@ -1170,15 +1089,9 @@ class SmartAnalysisDialog(tk.Toplevel):
         self.errors=errs
         self.typed=typed_len
         self._update_stats()
-        # Check completion — for timed para, finish early if paragraph completed before timeout
-        if self.is_timed_para:
-            if current == target and len(target)>0:
-                self._on_complete_timed(timeout=False)
-                return
-        else:
-            if current == target and len(target)>0:
-                self._on_complete()
-                return
+        # Check completion
+        if current == target and len(target)>0:
+            self._on_complete()
         # Also handle if typed longer than target -> extra errors
         if len(current) > len(target):
             self.err_var.set(f"Errors: {errs} (+{len(current)-len(target)} extra)")
@@ -1188,50 +1101,30 @@ class SmartAnalysisDialog(tk.Toplevel):
         errs=self.errors
         total=len(self.current_text) if self.current_text else 1
         elapsed = time.time()-self.start_time if self.start_time else 0
-        # Accuracy (typing.com / LiveChat)
+        # Accuracy
         acc = max(0, (typed - errs) / max(1, typed) * 100) if typed>0 else 100
-        self.acc_var.set(f"Acc: {acc:.1f}%")
+        self.acc_var.set(f"Accuracy: {acc:.1f}%")
         self.err_var.set(f"Errors: {errs}")
-        # WPM/CPM — Gross vs Net (LiveChat de-facto: WPM = corrected CPM /5)
+        # WPM: (correct chars /5) / minutes
         correct = max(0, typed - errs)
         minutes = elapsed/60 if elapsed>0 else 1/60
         wpm = (correct/5) / minutes if minutes>0 else 0
-        cpm = correct / minutes if minutes>0 else 0
-        cpm_gross = typed / minutes if minutes>0 else 0
+        # But if not started, wpm 0
         if self.start_time is None:
-            wpm=0; cpm=0; cpm_gross=0
+            wpm=0
         self.wpm_var.set(f"WPM: {wpm:.0f}")
-        try:
-            self.cpm_var.set(f"CPM: {cpm:.0f} ({cpm_gross:.0f} gross)")
-        except:
-            pass
-        # Progress — lesson mode vs timed para
-        if self.is_timed_para and self.time_limit>0:
-            # Show remaining + cert hint (Typewizz)
-            elapsed = time.time()-self.start_time if self.start_time else 0
-            remaining = max(0, self.time_limit - elapsed)
-            mins, secs = divmod(int(remaining),60)
-            # cert preview
-            cur_cpm = cpm
-            cert = cert_for(cur_cpm, acc) if typed>0 else None
-            cert_txt = f" • {cert} ✅" if cert else ""
-            self.progress_var.set(f"⏱ PARA {self.time_limit}s {self.timed_source[:18]} — {remaining:.0f}s left — {typed}/{len(self.current_text)} chars{cert_txt}")
-        else:
-            pct = min(100, typed/len(self.current_text)*100) if self.current_text else 0
-            if self.is_timed_para and self.time_limit==0:
-                self.progress_var.set(f"Para — Full Page — {typed}/{len(self.current_text)} chars — {pct:.0f}%")
-            else:
-                self.progress_var.set(f"Lesson {self.current_lesson} • Sub {self.current_sub} • Ex {self.current_ex} — {pct:.0f}%  —  {len(self.current_text)} chars")
+        # Progress
+        pct = min(100, typed/len(self.current_text)*100) if self.current_text else 0
+        self.progress_var.set(f"Lesson {self.current_lesson} • Sub {self.current_sub} • Ex {self.current_ex} — {pct:.0f}%  —  {len(self.current_text)} chars")
 
     def _update_timer(self):
-        if self.is_timed_para and self.time_limit>0:
+        if getattr(self, 'is_timed_para', False) and getattr(self, 'time_limit', 0)>0:
             if self.start_time:
                 elapsed=time.time()-self.start_time
                 remaining=max(0, self.time_limit - elapsed)
                 mins, secs = divmod(int(remaining),60)
                 self.time_var.set(f"Time: {mins:02d}:{secs:02d} / {self.time_limit//60:02d}:{self.time_limit%60:02d}")
                 self._update_stats()
-                # progress bar handled in _tick_timed
             else:
                 mins, secs = divmod(self.time_limit,60)
                 self.time_var.set(f"Time: {mins:02d}:{secs:02d}")
@@ -1253,6 +1146,17 @@ class SmartAnalysisDialog(tk.Toplevel):
     def _on_complete(self):
         elapsed=time.time()-self.start_time if self.start_time else 0
         correct=max(0, self.typed - self.errors)
+        # Smart analysis capture (isolated, does not disturb timed para)
+        if SMART_AVAILABLE and analyze_text:
+            try:
+                typed_text=self.input.get("1.0","end-1c")
+                rep=analyze_text(self.current_text, typed_text)
+                self.last_smart_report=rep
+                self.smart_session_reports.append(rep)
+                try: get_global_analyzer().add_report(rep)
+                except: pass
+            except Exception as e:
+                print("smart analysis error", e)
         acc=(self.typed - self.errors)/max(1,self.typed)*100 if self.typed else 100
         wpm=(correct/5)/(elapsed/60) if elapsed>0 else 0
         # Add to history

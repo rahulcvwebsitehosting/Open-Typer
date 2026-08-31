@@ -189,5 +189,80 @@ Rectangle {
 				font.pointSize: fontPointSize
 			}
 		}
+
+		// ── Smart Analysis — isolated (no timed-para conflict) ──
+		Rectangle {
+			Layout.fillWidth: true
+			Layout.topMargin: 12
+			height: smartCol.implicitHeight + 16
+			radius: 8
+			color: "#eff6ff"
+			border.color: "#bfdbfe"
+			visible: validator !== null
+			ColumnLayout {
+				id: smartCol
+				anchors.fill: parent
+				anchors.margins: 8
+				spacing: 6
+				RowLayout {
+					Layout.fillWidth: true
+					Label { text: qsTr("🧠 Smart Analysis"); font.bold:true; color:"#0f172a" }
+					Item { Layout.fillWidth:true }
+					AccentButton {
+						text: qsTr("Open Smart Analysis")
+						font.pointSize: 9
+						onClicked: smartAnalyzerDialog.open()
+					}
+				}
+				Label {
+					Layout.fillWidth: true
+					wrapMode: Text.WordWrap
+					font.pointSize: 9
+					color: "#334155"
+					text: {
+						if(validator===null) return ""
+						// trigger via SmartAnalyzer if available, otherwise fallback hint
+						return qsTr("Tap to see which letters you miss, why (adjacent keys / Shift / transposition), and get a personalized drill.")
+					}
+				}
+			}
+		}
+
+		SmartAnalyzer { id: smartAnalyzer }
+		Loader {
+			id: smartAnalyzerDialogLoader
+			active: false
+			sourceComponent: Component {
+				SmartAnalysisDialog {
+					targetText: validator ? validator.exerciseText : ""
+					typedText: validator ? validator.inputText : ""
+					elapsedSec: totalTime
+					onLoadDrill: {
+						// Home.qml will handle loadText via signal; for now just log
+						console.log("Smart drill:", drillText.substring(0,60))
+					}
+				}
+			}
+		}
+		// dialog opener helper
+		QtObject {
+			id: smartAnalyzerDialog
+			function open(){
+				if(validator===null) return
+				// lazy create Dialog if not exists — use dynamic creation
+				let comp = Qt.createComponent("dialogs/SmartAnalysisDialog.qml")
+				if(comp.status===Component.Ready){
+					let dlg = comp.createObject(columnLayout, {"targetText": validator.exerciseText, "typedText": validator.inputText, "elapsedSec": totalTime})
+					if(dlg){
+						dlg.onLoadDrill.connect(function(drill){
+							// bubble to parent Home via custom signal? For now copy to clipboard
+							// Home.qml can listen via Connections if needed
+							if(typeof loadText !== "undefined") loadText(drill, false)
+						})
+						dlg.open()
+					}
+				}
+			}
+		}
 	}
 }
