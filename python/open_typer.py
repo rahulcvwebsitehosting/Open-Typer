@@ -1023,6 +1023,171 @@ class TypingApp(tk.Tk):
         self._update_stats()
         self.after(200, self._update_timer)
 
+    # === Timed Para Time Attack — typing.com 1/3/5 min + LiveChat 60s + Typewizz 1 min cert ===
+    def _start_timed_para_dialog(self):
+        dlg=TimedParaDialog(self, self.packs)
+        res=dlg.get()
+        if res:
+            secs, source, target = res
+            self._quick_timed(secs, source, target)
+
+    def _quick_timed(self, secs, source, target):
+        self._start_timed_para(secs, source, target)
+
+    def _start_timed_para(self, time_limit, source, target_chars):
+        if self.timer_job:
+            try: self.after_cancel(self.timer_job)
+            except: pass
+        para=""
+        if "Random Words" in source:
+            para=generate_random_para(target_chars, "words")
+        elif "Paragraph Prose" in source:
+            entries=[]
+            for lst in self.packs.values():
+                for en in lst:
+                    if en["sub"]==4 or en["sub"]==3:
+                        entries.append(en["text"])
+            if entries:
+                import random as _rnd
+                _rnd.shuffle(entries)
+                para=""
+                for e in entries:
+                    if len(para)+len(e)+1 <= target_chars:
+                        para+= (" " if para else "")+e
+                    else:
+                        break
+                if not para:
+                    para=entries[0][:target_chars]
+            else:
+                para=generate_random_para(target_chars, "words")
+        elif "Current Exercise" in source:
+            entries=self.packs.get(self.current_pack, [])
+            cur=None
+            for en in entries:
+                if en["lesson"]==self.current_lesson and en["sub"]==self.current_sub and en["ex"]==self.current_ex:
+                    cur=en; break
+            base=cur["text"] if cur else "The quick brown fox jumps over the lazy dog. "
+            para=""
+            while len(para) < target_chars:
+                para+= (" " if para else "")+base
+            para=para[:target_chars].rsplit(" ",1)[0]
+        elif "Custom File" in source:
+            import os as _os, tkinter.filedialog as _fd
+            path=_fd.askopenfilename(title="Open para text", filetypes=[("Text","*.txt"),("All","*.*")])
+            if path and _os.path.isfile(path):
+                try:
+                    with open(path, encoding="utf-8", errors="ignore") as f:
+                        txt=f.read().strip().replace("\r","").replace("\n"," ")
+                    para=txt[:target_chars] if target_chars< len(txt) else txt
+                except Exception as e:
+                    import tkinter.messagebox as _mb
+                    _mb.showerror("Error", str(e)); return
+            else:
+                return
+        else:
+            para=generate_random_para(target_chars, "words")
+        self.current_text=self._wrap_text(para, 60)
+        self.is_timed_para=True
+        self.time_limit=time_limit
+        self.time_remaining=time_limit
+        self.timed_source=source
+        self.display.config(state="normal")
+        self.display.delete("1.0","end")
+        self.display.insert("1.0", self.current_text)
+        self.display.tag_add("pending","1.0","end")
+        self.display.tag_remove("correct","1.0","end")
+        self.display.tag_remove("incorrect","1.0","end")
+        self.display.tag_remove("current","1.0","end")
+        if self.current_text:
+            self.display.tag_add("current","1.0","1.1")
+            self.display.tag_remove("pending","1.0","1.1")
+        self.display.config(state="disabled")
+        self.input.delete("1.0","end")
+        self.input.focus_set()
+        self.start_time=None
+        self.errors=0
+        self.typed=0
+        self.time_progress.config(maximum=max(1,time_limit) if time_limit else 100, value=0)
+        if time_limit==0:
+            self.progress_var.set(f"Para — {source} — Full Page — {len(self.current_text)} chars (no timer)")
+            self.time_var.set("Time: --:--")
+        else:
+            mins, secs = divmod(time_limit,60)
+            self.progress_var.set(f"⏱ Para Time Attack — {source} — {mins:02d}:{secs:02d} — {len(self.current_text)} chars")
+            self.time_var.set(f"Time: {mins:02d}:{secs:02d}")
+        self._update_stats()
+        self.after(200, self._update_timer)
+
+    def _tick_timed(self):
+        if not self.is_timed_para or self.time_limit==0 or self.start_time is None:
+            return
+        import time as _time
+        elapsed=_time.time()-self.start_time
+        remaining=max(0, self.time_limit - elapsed)
+        self.time_remaining=remaining
+        mins, secs = divmod(int(remaining),60)
+        self.time_var.set(f"Time: {mins:02d}:{secs:02d} / {self.time_limit//60:02d}:{self.time_limit%60:02d}")
+        pct = min(100, elapsed/self.time_limit*100) if self.time_limit else 0
+        self.time_progress.config(value=elapsed)
+        if remaining<=10 and remaining>0:
+            try: self.time_progress.config(style="red.Horizontal.TProgressbar")
+            except: pass
+        if remaining<=0:
+            self._on_complete_timed(timeout=True)
+        else:
+            self.timer_job=self.after(100, self._tick_timed)
+
+    def _on_complete_timed(self, timeout=False):
+        import time as _time, tkinter.messagebox as _mb
+        if self.timer_job:
+            try: self.after_cancel(self.timer_job)
+            except: pass
+            self.timer_job=None
+        elapsed=_time.time()-self.start_time if self.start_time else self.time_limit
+        if timeout:
+            elapsed=self.time_limit
+        target=self.current_text
+        typed_text=self.input.get("1.0","end-1c")
+        correct=sum(1 for a,b in zip(typed_text, target) if a==b)
+        typed_len=len(typed_text)
+        cpm = cpm_calc(correct, elapsed)
+        cpm_gross = cpm_calc(typed_len, elapsed)
+        wpm = wpm_calc(correct, elapsed)
+        wpm_gross = wpm_calc(typed_len, elapsed)
+        acc = (correct/typed_len*100) if typed_len else 100
+        cert=cert_for(cpm, acc)
+        target_words=target.split()
+        typed_words=typed_text.split()
+        err_words=sum(1 for a,b in zip(typed_words, target_words) if a!=b)
+        if SMART_AVAILABLE and analyze_text:
+            try:
+                rep=analyze_text(target, typed_text)
+                self.last_smart_report=rep
+                self.smart_session_reports.append(rep)
+            except: pass
+        hist=f"⏱ PARA {self.time_limit}s {self.timed_source[:12]} — WPM {wpm:.0f} (gross {wpm_gross:.0f}) CPM {cpm:.0f} Acc {acc:.1f}% Err {self.errors} Cert {cert or '—'}"
+        self.history.insert(0, hist)
+        self.history=self.history[:5]
+        self.history_label.config(text="\n".join(self.history))
+        cert_msg=""
+        if cert:
+            cert_msg=f"\nCertificate: {cert} ✅\n"
+            if cert=="Gold": cert_msg+="Gold: 350 CPM 99.5% — top 8%\n"
+            elif cert=="Silver": cert_msg+="Silver: 250 CPM 98.5% — top 21%\n"
+            else: cert_msg+="Bronze: 200 CPM 96.5% — top 39%\n"
+        else:
+            cert_msg="\nCertificate: —\nNext: Bronze 200 CPM 96.5%\n"
+        msg = f"{'Time up!' if timeout else 'Completed!'}\n\nSource: {self.timed_source}\nTime limit: {self.time_limit}s  Elapsed: {int(elapsed//60):02d}:{int(elapsed%60):02d}\nChars: {typed_len}/{len(target)} (correct {correct})\n\nWPM: {wpm:.0f} (gross {wpm_gross:.0f})\nCPM: {cpm:.0f} (gross {cpm_gross:.0f})\nAccuracy: {acc:.1f}%\nErrors: {self.errors}  Error words: {err_words}\n{cert_msg}\nRetry?"
+        if _mb.askyesno("Time Attack Completed", msg):
+            self._start_timed_para(self.time_limit, self.timed_source, len(self.current_text))
+        else:
+            self.is_timed_para=False
+            self.time_progress.config(value=0)
+            self._load_exercise()
+            if SMART_AVAILABLE and self.last_smart_report and self.errors>0:
+                if _mb.askyesno("Smart Analysis", "Show Smart Mistake Analysis for this para?"):
+                    self._show_smart_analysis()
+
     def _wrap_text(self, text, line_len):
         # Mimic ConfigParser::initExercise word wrap
         words=text.replace("\n"," \n ").split(" ")
@@ -1089,9 +1254,15 @@ class TypingApp(tk.Tk):
         self.errors=errs
         self.typed=typed_len
         self._update_stats()
-        # Check completion
-        if current == target and len(target)>0:
-            self._on_complete()
+        # Check completion — for timed para, finish early if paragraph completed before timeout
+        if getattr(self, 'is_timed_para', False):
+            if current == target and len(target)>0:
+                self._on_complete_timed(timeout=False)
+                return
+        else:
+            if current == target and len(target)>0:
+                self._on_complete()
+                return
         # Also handle if typed longer than target -> extra errors
         if len(current) > len(target):
             self.err_var.set(f"Errors: {errs} (+{len(current)-len(target)} extra)")
@@ -1101,21 +1272,37 @@ class TypingApp(tk.Tk):
         errs=self.errors
         total=len(self.current_text) if self.current_text else 1
         elapsed = time.time()-self.start_time if self.start_time else 0
-        # Accuracy
+        # Accuracy (typing.com / LiveChat)
         acc = max(0, (typed - errs) / max(1, typed) * 100) if typed>0 else 100
-        self.acc_var.set(f"Accuracy: {acc:.1f}%")
+        self.acc_var.set(f"Acc: {acc:.1f}%")
         self.err_var.set(f"Errors: {errs}")
-        # WPM: (correct chars /5) / minutes
+        # WPM/CPM — Gross vs Net (LiveChat de-facto: WPM = corrected CPM /5)
         correct = max(0, typed - errs)
         minutes = elapsed/60 if elapsed>0 else 1/60
         wpm = (correct/5) / minutes if minutes>0 else 0
-        # But if not started, wpm 0
+        cpm = correct / minutes if minutes>0 else 0
+        cpm_gross = typed / minutes if minutes>0 else 0
         if self.start_time is None:
-            wpm=0
+            wpm=0; cpm=0; cpm_gross=0
         self.wpm_var.set(f"WPM: {wpm:.0f}")
-        # Progress
-        pct = min(100, typed/len(self.current_text)*100) if self.current_text else 0
-        self.progress_var.set(f"Lesson {self.current_lesson} • Sub {self.current_sub} • Ex {self.current_ex} — {pct:.0f}%  —  {len(self.current_text)} chars")
+        try:
+            self.cpm_var.set(f"CPM: {cpm:.0f} ({cpm_gross:.0f} gross)")
+        except:
+            pass
+        # Progress — lesson mode vs timed para
+        if getattr(self, 'is_timed_para', False) and getattr(self, 'time_limit', 0)>0:
+            elapsed2 = time.time()-self.start_time if self.start_time else 0
+            remaining = max(0, self.time_limit - elapsed2)
+            cur_cpm = cpm
+            cert = cert_for(cur_cpm, acc) if typed>0 else None
+            cert_txt = f" • {cert} ✅" if cert else ""
+            self.progress_var.set(f"⏱ PARA {self.time_limit}s {self.timed_source[:18]} — {remaining:.0f}s left — {typed}/{len(self.current_text)} chars{cert_txt}")
+        else:
+            pct = min(100, typed/len(self.current_text)*100) if self.current_text else 0
+            if getattr(self, 'is_timed_para', False) and getattr(self, 'time_limit', 0)==0:
+                self.progress_var.set(f"Para — Full Page — {typed}/{len(self.current_text)} chars — {pct:.0f}%")
+            else:
+                self.progress_var.set(f"Lesson {self.current_lesson} • Sub {self.current_sub} • Ex {self.current_ex} — {pct:.0f}%  —  {len(self.current_text)} chars")
 
     def _update_timer(self):
         if getattr(self, 'is_timed_para', False) and getattr(self, 'time_limit', 0)>0:
@@ -1171,6 +1358,12 @@ class TypingApp(tk.Tk):
         else:
             # stay but allow restart
             pass
+        # Offer smart analysis if errors and available
+        if self.errors>0 and SMART_AVAILABLE and getattr(self, 'last_smart_report', None):
+            try:
+                if messagebox.askyesno("Smart Analysis", "Show Smart Mistake Analysis for this exercise?\n(Why you made those mistakes + personalized drill)"):
+                    self._show_smart_analysis()
+            except: pass
 
     def _open_custom(self):
         path=filedialog.askopenfilename(title="Open custom text", filetypes=[("Text files","*.txt"),("All files","*.*")])
@@ -1238,6 +1431,86 @@ class TypingApp(tk.Tk):
         ttk.Button(frm, text="Close", command=win.destroy).pack(pady=10)
         win.bind("<Escape>", lambda e: win.destroy())
         win.focus_set()
+
+    def _show_smart_analysis(self):
+        """Open SmartAnalysisDialog for current exercise or last completed."""
+        if not SMART_AVAILABLE or not analyze_text:
+            messagebox.showinfo("Smart Analysis", "Smart analysis engine not available. Ensure python/smart_analysis.py is present.")
+            return
+        target = getattr(self, 'current_text', '')
+        typed = self.input.get("1.0","end-1c") if hasattr(self, 'input') else ""
+        elapsed = time.time()-self.start_time if self.start_time else 0
+        try:
+            SmartAnalysisDialog(self, target, typed, elapsed)
+        except Exception as e:
+            messagebox.showerror("Smart Analysis error", str(e))
+
+    def _show_session_analysis(self):
+        if not SMART_AVAILABLE or not get_global_analyzer:
+            messagebox.showinfo("Session Analysis", "Global analyzer not available.")
+            return
+        try:
+            ga = get_global_analyzer()
+            worst = ga.aggregated_worst()
+            if not worst:
+                messagebox.showinfo("Session Analysis", "No session data yet — complete a few exercises first.")
+                return
+            win = tk.Toplevel(self)
+            win.title("Session Smart Analysis — Aggregated")
+            win.geometry("560x420")
+            win.transient(self); win.grab_set()
+            frm = ttk.Frame(win, padding=12)
+            frm.pack(fill="both", expand=True)
+            ttk.Label(frm, text="Aggregated — Worst Letters (session)", font=("Segoe UI", 11, "bold")).pack(anchor="w")
+            txt = tk.Text(frm, height=12, wrap="word", font=("Consolas", 10))
+            txt.pack(fill="both", expand=True, pady=8)
+            for ch, st in worst:
+                txt.insert("end", f"'{ch}': {st['mistakes']}/{st['total']} errors — {st['accuracy']:.0f}% acc, rate {st['error_rate']*100:.0f}%\n")
+            txt.config(state="disabled")
+            acc = ga.overall_accuracy()
+            ttk.Label(frm, text=f"Overall accuracy: {acc:.1f}% — {len(ga.reports)} reports").pack(anchor="w")
+            bf = ttk.Frame(frm); bf.pack(fill="x", pady=8)
+            ttk.Button(bf, text="Practice Weak Letters →", command=lambda: [win.destroy(), self._practice_weak_letters()]).pack(side="right")
+            ttk.Button(bf, text="Close", command=win.destroy).pack(side="right", padx=4)
+        except Exception as e:
+            messagebox.showerror("Session error", str(e))
+
+    def _practice_weak_letters(self):
+        if not SMART_AVAILABLE:
+            messagebox.showinfo("Practice", "Smart engine not available.")
+            return
+        try:
+            rep = getattr(self, 'last_smart_report', None)
+            if not rep and getattr(self, 'smart_session_reports', []):
+                rep = self.smart_session_reports[-1]
+            if not rep:
+                messagebox.showinfo("Practice", "No mistakes to practice — complete an exercise with errors first.")
+                return
+            drill = getattr(rep, 'drill_text', None) or (rep.get('drill_text') if isinstance(rep, dict) else None)
+            if not drill:
+                worst = getattr(rep, 'worst_letters', []) or (rep.get('worst_letters', []) if isinstance(rep, dict) else [])
+                letters = [ch for ch,_ in worst[:3]] if worst else ['a','s','d']
+                from python.smart_analysis import _generate_drill as gen
+                drill = gen([(ch, {"mistakes":1, "total":1}) for ch in letters], num_words=40)
+            if not drill:
+                messagebox.showinfo("Practice", "No drill generated.")
+                return
+            self._load_drill_text(drill)
+        except Exception as e:
+            messagebox.showerror("Practice error", str(e))
+
+    def _load_drill_text(self, text):
+        drill_name = "Smart Drill — Weak Letters"
+        entry = {"lesson":1,"sub":1,"ex":1,"text":text,"raw":text,"desc":"Smart drill","limit":120,"line_len":60,"repeat":False,"repeat_type":""}
+        self.packs[drill_name]=[entry]
+        self.pack_names=sorted(self.packs.keys())
+        self.pack_combo["values"]=self.pack_names
+        self.current_pack=drill_name
+        self.pack_var.set(drill_name)
+        self.current_lesson=1; self.current_sub=1; self.current_ex=1
+        self._refresh_combos()
+        self._load_exercise()
+        messagebox.showinfo("Drill Ready", f"Loaded drill for weakest letters:\n\n{text[:120]}...")
 
     def _get_rev(self):
         try:
