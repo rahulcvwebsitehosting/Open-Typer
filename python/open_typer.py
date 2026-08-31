@@ -21,7 +21,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 
 # --- Branding ---
-VERSION = "5.3.2"
+VERSION = "5.3.5"
 AUTHOR = "Rahul Shyam"
 PORTFOLIO = "https://rahulshyam-portfolio.vercel.app/"
 GITHUB = "https://github.com/rahulcvwebsitehosting/Open-Typer"
@@ -615,6 +615,7 @@ class SmartAnalysisDialog(tk.Toplevel):
 
 
 
+class TypingApp(tk.Tk):
     def __init__(self, packs):
         super().__init__()
         self.packs=packs
@@ -652,93 +653,6 @@ class SmartAnalysisDialog(tk.Toplevel):
         # Smart Analysis — cumulative across session
         self.smart_session_reports=[]
         self.last_smart_report=None
-        self.current_pack=self.pack_names[0]
-        self.current_lesson=1
-        self.current_sub=1
-        self.current_ex=1
-        self._build_ui()
-        self._load_exercise()
-        self.bind("<Key>", self._global_key)
-
-    def _build_ui(self):
-        # Top branding bar
-        top = tk.Frame(self, bg="#0f172a", height=56)
-        top.pack(fill="x", side="top")
-        top.pack_propagate(False)
-        tk.Label(top, text="⌨ Open-Typer", fg="white", bg="#0f172a", font=("Segoe UI", 16, "bold")).pack(side="left", padx=16, pady=8)
-        tk.Label(top, text=f"v{VERSION}  •  by {AUTHOR}", fg="#93c5fd", bg="#0f172a", font=("Segoe UI", 9)).pack(side="left", pady=8)
-        # Portfolio button
-        btnf = tk.Frame(top, bg="#0f172a")
-        btnf.pack(side="right", padx=12)
-        for txt, url in [("Portfolio", PORTFOLIO), ("GitHub", GITHUB), ("About", None)]:
-            b = tk.Button(btnf, text=txt, bg="#1e40af" if txt=="Portfolio" else "#1e293b", fg="white", relief="flat", padx=10, pady=4, font=("Segoe UI", 9, "bold"), cursor="hand2", command=lambda u=url, t=txt: self._open_top(t,u))
-            b.pack(side="left", padx=4)
-            b.bind("<Enter>", lambda e, b=b: b.config(bg="#2563eb"))
-            b.bind("<Leave>", lambda e, b=b, t=txt: b.config(bg="#1e40af" if t=="Portfolio" else "#1e293b"))
-
-        # Controls frame
-        ctrl = ttk.Frame(self, padding=10)
-        ctrl.pack(fill="x")
-        # Pack selector
-        ttk.Label(ctrl, text="Pack:").grid(row=0, column=0, sticky="w", padx=4)
-        self.pack_var=tk.StringVar(value=self.current_pack)
-        self.pack_combo=ttk.Combobox(ctrl, textvariable=self.pack_var, values=self.pack_names, state="readonly", width=22)
-        self.pack_combo.grid(row=0, column=1, padx=4)
-        self.pack_combo.bind("<<ComboboxSelected>>", self._on_pack_change)
-
-        ttk.Label(ctrl, text="Lesson:").grid(row=0, column=2, padx=4)
-        self.lesson_var=tk.StringVar()
-        self.lesson_combo=ttk.Combobox(ctrl, textvariable=self.lesson_var, state="readonly", width=8)
-        self.lesson_combo.grid(row=0, column=3, padx=4)
-        self.lesson_combo.bind("<<ComboboxSelected>>", self._on_lesson_change)
-
-        ttk.Label(ctrl, text="Sublesson:").grid(row=0, column=4, padx=4)
-        self.sub_var=tk.StringVar()
-        self.sub_combo=ttk.Combobox(ctrl, textvariable=self.sub_var, state="readonly", width=10)
-        self.sub_combo.grid(row=0, column=5, padx=4)
-        self.sub_combo.bind("<<ComboboxSelected>>", self._on_sub_change)
-
-        ttk.Label(ctrl, text="Exercise:").grid(row=0, column=6, padx=4)
-        self.ex_var=tk.StringVar()
-        self.ex_combo=ttk.Combobox(ctrl, textvariable=self.ex_var, state="readonly", width=8)
-        self.ex_combo.grid(row=0, column=7, padx=4)
-        self.ex_combo.bind("<<ComboboxSelected>>", self._on_ex_change)
-
-        # Buttons
-        bf = ttk.Frame(ctrl)
-        bf.grid(row=0, column=8, padx=10)
-        ttk.Button(bf, text="⟳ Restart", command=self._restart).pack(side="left", padx=2)
-        ttk.Button(bf, text="‹ Prev", command=lambda: self._nav(-1)).pack(side="left", padx=2)
-
-class TypingApp(tk.Tk):
-    def __init__(self, packs):
-        super().__init__()
-        self.packs=packs
-        self.pack_names=sorted(packs.keys())
-        if not self.pack_names:
-            messagebox.showerror("No packs", "No lesson packs found. Place res/packs beside exe or use File→Open")
-            self.pack_names=["en_US-default-A"]
-            self.packs={"en_US-default-A": [{"lesson":1,"sub":1,"ex":1,"text":"ff jj ff jj","raw":"ff jj","desc":"","limit":120,"line_len":60}]}
-        self.title(f"Open-Typer {VERSION} — by {AUTHOR}")
-        try:
-            self.iconbitmap(resource_path("res/icons/icon.ico"))
-        except:
-            pass
-        self.geometry("920x700")
-        self.minsize(860,600)
-        # theme
-        self.is_dark=False
-        self.style=ttk.Style()
-        try:
-            self.style.theme_use("clam")
-        except: pass
-        self.configure(bg="#f5f5f5")
-        self.current_text=""
-        self.current_entry=""
-        self.start_time=None
-        self.errors=0
-        self.typed=0
-        self.history=[]
         self.current_pack=self.pack_names[0]
         self.current_lesson=1
         self.current_sub=1
