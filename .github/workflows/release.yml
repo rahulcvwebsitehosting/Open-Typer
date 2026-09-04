@@ -122,6 +122,8 @@ jobs:
         arch: 'win64_mingw'
         target: ${{ matrix.qt-target }}
         modules: ${{ matrix.qt-modules }}
+        aqtversion: '==3.1.6'
+        py7zrversion: '==0.20.2'
     - name: Install Qt IFW
       if: env.create_windows_installer == 1
       run: |
