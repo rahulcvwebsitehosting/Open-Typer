@@ -19,7 +19,7 @@ jobs:
             qt-modules: 'qtcharts qt5compat qtshadertools'
             mingw-version: '11.2.0'
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0
         submodules: true
@@ -46,11 +46,12 @@ jobs:
         target: ${{ matrix.qt-target }}
         modules: ${{ matrix.qt-modules }}
     - name: Install Qt IFW (Windows)
+      if: env.create_windows_installer == 1
       run: |
         curl -o aqt.exe -L https://github.com/miurahr/aqtinstall/releases/download/v2.2.1/aqt.exe
         ./aqt.exe install-tool windows desktop tools_ifw
         mv Tools ..
-        echo ${pwd}/../Tools/QtInstallerFramework/*/bin >> "${GITHUB_PATH}"
+        echo $(pwd)/../Tools/QtInstallerFramework/*/bin >> "${GITHUB_PATH}"
       shell: bash
     - if: contains(matrix.os, 'windows')
       name: Install MinGW
@@ -80,17 +81,19 @@ jobs:
       shell: bash
     ## Upload
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: build-Qt-${{ matrix.qt-version }}
         path: release/
+      if: always()
     - name: Move artifacts
+      if: env.create_windows_installer == 1
       run: mv release ../
       shell: bash
     ## Build installer
     - if: env.create_windows_installer == 1
       name: Get installer configuration
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         repository: ${{ github.repository_owner }}/${{ env.windows_installer_repo }}
         fetch-depth: 0
@@ -106,7 +109,8 @@ jobs:
       shell: bash
     ## Upload installer
     - name: Upload installer
-      uses: actions/upload-artifact@v3
+      if: env.create_windows_installer == 1
+      uses: actions/upload-artifact@v4
       with:
         name: installer-Qt-${{ matrix.qt-version }}
         path: '*.exe'

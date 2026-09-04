@@ -6,15 +6,15 @@ on:
 
 jobs:
   build-linux-release:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     strategy:
       matrix:
         qt-version: ['6.5.2']
         qt-target: ['desktop']
         qt-modules: ['qtcharts qt5compat qtshadertools']
-        arch: ['amd64', 'aarch64', 'armv7']
+        arch: ['amd64']
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0
         submodules: true
@@ -24,10 +24,7 @@ jobs:
         sed -i -e '/^$/d' .github/config.env
         cat .github/config.env >> "${GITHUB_ENV}"
       shell: bash
-    - name: Set up node.js
-      uses: actions/setup-node@v3
-    - if: contains(matrix.arch, 'amd64')
-      name: Install dependencies
+    - name: Install dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y libxkbcommon-x11-0
@@ -43,46 +40,27 @@ jobs:
       run: echo is_prerelease=1 >> "${GITHUB_ENV}"
       shell: bash
     # Install Qt
-    - if: contains(matrix.arch, 'amd64')
-      name: Install Qt
+    - name: Install Qt
       uses: jurplel/install-qt-action@v3
       with:
         version: ${{ matrix.qt-version }}
         host: 'linux'
         target: ${{ matrix.qt-target }}
         modules: ${{ matrix.qt-modules }}
-    - if: "!contains(matrix.arch, 'amd64')"
-      name: Restore cross-compiled Qt from cache
-      id: cache-qt-cross
-      uses: actions/cache@v3
-      with:
-        path: |
-          ./qt-host/
-          ./qt-cross/
-          ./sysroot/
-        key: qt-cross-${{ runner.os }}-${{ matrix.qt-version }}-${{ matrix.qt-target }}-${{ matrix.qt-modules }}-${{ matrix.arch }}
-        restore-keys:
-          qt-cross-${{ runner.os }}-${{ matrix.qt-version }}-${{ matrix.qt-target }}-${{ matrix.qt-modules }}-${{ matrix.arch }}
-    - if: "!contains(matrix.arch, 'amd64') && steps.cache-qt-cross.outputs.cache-hit != 'true'"
-      name: Cross-compile Qt
-      shell: bash
-      run: .ci/build-qt6.sh "${{ matrix.qt-version }}" "${{ matrix.qt-modules }}" "${{ matrix.arch }}"
     # Build
-    - if: "!contains(matrix.arch, 'amd64')"
-      name: Prepare cross-compilation environment
-      run: .ci/prepare-cross-build.sh "${{ matrix.arch }}"
-      shell: bash
     - name: Build
       run: .ci/ubuntu-build.sh
       shell: 'script -q -e -c "bash {0}"'
     # Upload artifacts
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: build-ubuntu-${{ matrix.arch }}
         path: |
           *.AppImage
           *.zsync
+        if-no-files-found: warn
+      if: always()
     - if: env.is_prerelease == 1
       name: Do not upload packages to the PPA if this is a pre-release
       run: echo upload_to_ppa=0 >> "${GITHUB_ENV}"
@@ -90,7 +68,7 @@ jobs:
     - if: env.upload_to_ppa == 1 && contains(matrix.arch, 'amd64')
       name: Import GPG key
       id: gpgkey
-      uses: crazy-max/ghaction-import-gpg@v5
+      uses: crazy-max/ghaction-import-gpg@v6
       with:
         gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
         passphrase: ${{ secrets.GPG_PASSPHRASE }}
@@ -115,7 +93,7 @@ jobs:
             qt-modules: 'qtcharts qt5compat qtshadertools'
             mingw-version: '11.2.0'
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0
         submodules: true
@@ -125,8 +103,6 @@ jobs:
         sed -i -e '/^$/d' .github/config.env
         cat .github/config.env >> "${GITHUB_ENV}"
       shell: bash
-    - name: Set up node.js
-      uses: actions/setup-node@v3
     - name: Get version
       run: |
         version=$(head -n 1 .qmake.conf)
@@ -147,11 +123,12 @@ jobs:
         target: ${{ matrix.qt-target }}
         modules: ${{ matrix.qt-modules }}
     - name: Install Qt IFW
+      if: env.create_windows_installer == 1
       run: |
         curl -o aqt.exe -L https://github.com/miurahr/aqtinstall/releases/download/v2.2.1/aqt.exe
         ./aqt.exe install-tool windows desktop tools_ifw
         mv Tools ..
-        echo ${pwd}/../Tools/QtInstallerFramework/*/bin >> "${GITHUB_PATH}"
+        echo $(pwd)/../Tools/QtInstallerFramework/*/bin >> "${GITHUB_PATH}"
       shell: bash
     - name: Install MinGW
       uses: egor-tensin/setup-mingw@v2
@@ -176,14 +153,12 @@ jobs:
         for %%v in (opentyper-*.dll) do windeployqt "%%v" || exit 5
       shell: cmd
     - name: Finalize Windows build
-      run: |
-        .ci/windows-build.sh 1
-        mv release ../
+      run: .ci/windows-build.sh 1
       shell: bash
     # Update Windows repository
     - if: env.create_windows_installer == 1
       name: Get installer configuration
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         repository: ${{ github.repository_owner }}/${{ env.windows_installer_repo }}
         fetch-depth: 0
@@ -200,20 +175,29 @@ jobs:
       shell: bash
     # Upload artifacts
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      if: env.create_windows_installer != 1
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-windows
+        path: 'release/*.exe'
+        if-no-files-found: warn
+    - name: Upload artifacts (installer)
+      if: env.create_windows_installer == 1
+      uses: actions/upload-artifact@v4
       with:
         name: build-windows
         path: '*.exe'
+        if-no-files-found: warn
 
   build-macos-release:
-    runs-on: macos-latest
+    runs-on: macos-13
     strategy:
       matrix:
         qt-version: ['6.5.2']
         qt-target: ['desktop']
         qt-modules: ['qtcharts qt5compat qtshadertools']
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0
         submodules: true
@@ -223,8 +207,6 @@ jobs:
         sed -i -e '/^$/d' .github/config.env
         cat .github/config.env >> "${GITHUB_ENV}"
       shell: bash
-    - name: Set up node.js
-      uses: actions/setup-node@v3
     - name: Get version
       run: |
         version=$(head -n 1 .qmake.conf)
@@ -249,27 +231,29 @@ jobs:
       shell: bash
     ## Upload artifacts
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: build-macos
         path: '*.dmg'
+        if-no-files-found: warn
+      if: always()
 
   # WebAssembly
   build-wasm-release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     strategy:
       matrix:
         qt-version: ['6.5.2']
         qt-target: ['desktop']
         qt-modules: ['qtcharts qt5compat qtshadertools']
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0
         submodules: true
     # Install emscripten
     - name: Install emscripten
-      uses: mymindstorm/setup-emsdk@v11
+      uses: mymindstorm/setup-emsdk@v14
       with:
         version: 3.1.25
         actions-cache-folder: 'emsdk-cache'
@@ -297,7 +281,7 @@ jobs:
     # Build
     - run: source .ci/common/build.sh wasm
       shell: bash
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       with:
         name: build-wasm
         path: |
@@ -305,13 +289,15 @@ jobs:
           *.js
           *.wasm
           *.svg
+        if-no-files-found: warn
+      if: always()
 
   # Release
   release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: [build-linux-release, build-windows-release, build-macos-release, build-wasm-release]
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0
         submodules: true
@@ -323,7 +309,8 @@ jobs:
         GITHUB_REF_NAME="${{ github.ref_name }}"
         echo "version=${GITHUB_REF_NAME//v/}" >> $GITHUB_ENV
       shell: bash
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
+      if: env.upload_online_app == 1
       with:
         repository: ${{ github.repository_owner }}/${{ env.online_app_repo }}
         fetch-depth: 0
@@ -347,13 +334,15 @@ jobs:
         ls
       shell: bash
     - name: Download artifacts
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
     - if: env.upload_online_app == 1
       name: Upload online app
       run: |
         cd online-app
         git checkout --orphan new-branch
-        mv ../build-wasm/* ./
+        mv ../artifacts/build-wasm/* ./
         rm -f index.html
         ln -s ${{ env.executable_name }}.html index.html
         git config user.name "GitHub Actions Bot"
@@ -364,11 +353,10 @@ jobs:
         git branch -m master
         git push -f origin master
       shell: bash
-    - if: env.create_release == 1
-      name: Create release
+    - name: Create release
       uses: ncipollo/release-action@v1
       with:
-        artifacts: "build-windows/*.exe,build-ubuntu-*/*.AppImage,build-ubuntu-*/*.zsync,*.deb,build-macos/*.dmg"
+        artifacts: "artifacts/build-windows/*.exe,artifacts/build-ubuntu-*/*.AppImage,artifacts/build-ubuntu-*/*.zsync,*.deb,artifacts/build-macos/*.dmg"
         name: "${{ env.app_name }} ${{ env.version }}"
         owner: ${{ github.event.pusher.name }}
         draft: true

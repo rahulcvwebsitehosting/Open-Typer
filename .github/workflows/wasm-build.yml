@@ -9,19 +9,19 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     strategy:
       matrix:
         qt-version: ['6.5.2']
         qt-target: ['desktop']
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0
         submodules: true
     # Install emscripten
     - name: Install emscripten
-      uses: mymindstorm/setup-emsdk@v11
+      uses: mymindstorm/setup-emsdk@v14
       with:
         version: 3.1.25
         actions-cache-folder: 'emsdk-cache'
@@ -49,7 +49,7 @@ jobs:
     # Build
     - run: source .ci/common/build.sh wasm
       shell: bash
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       with:
         name: build-wasm
         path: |
@@ -57,3 +57,4 @@ jobs:
           *.js
           *.wasm
           *.svg
+      if: always()

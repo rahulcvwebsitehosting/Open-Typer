@@ -9,14 +9,14 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-13
     strategy:
       matrix:
-        os: [macos-latest]
+        os: [macos-13]
         qt-version: ['6.5.2']
         qt-target: ['desktop']
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0
         submodules: true
@@ -26,8 +26,6 @@ jobs:
         sed -i -e '/^$/d' .github/config.env
         cat .github/config.env >> "${GITHUB_ENV}"
       shell: bash
-    - name: Set up node.js
-      uses: actions/setup-node@v3
     ## Install Qt
     - name: Install Qt
       uses: jurplel/install-qt-action@v3
@@ -43,7 +41,8 @@ jobs:
     ## Package
     ## Upload
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: build-Qt-${{ matrix.qt-version }}
         path: '*.dmg'
+      if: always()

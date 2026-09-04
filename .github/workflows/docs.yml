@@ -2,26 +2,27 @@ name: Update documentation
 
 on:
   push:
-    branches: [ master ]
+    branches: [ main ]
   
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Setup environment
       run: |
         sed -i -e '/^#/d' .github/config.env
         sed -i -e '/^$/d' .github/config.env
         cat .github/config.env >> "${GITHUB_ENV}"
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
+      if: env.deploy_docs == 1
       with:
         repository: ${{ github.repository_owner }}/${{ env.docs_repo }}
         token: ${{ secrets.PUSH_TOKEN }}
         path: docs-repo
     - if: env.build_docs == 1
       name: Build docs
-      uses: mattnotmitt/doxygen-action@v1.1.0
+      uses: mattnotmitt/doxygen-action@v1.9.5
       with:
         doxyfile-path: "./Doxyfile"
         working-directory: "."
