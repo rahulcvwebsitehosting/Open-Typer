@@ -90,3 +90,6 @@ docs/
 
 # Debian packaging
 debian/changelog
+
+# linter build artifacts
+clang_tidy_report.txt
