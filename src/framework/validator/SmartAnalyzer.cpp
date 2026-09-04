@@ -9,6 +9,8 @@
 #include <QtMath>
 #include <QRandomGenerator>
 #include <QRegularExpression>
+#include <algorithm>
+#include <functional>
 
 QMap<QString, SmartAnalyzer::KeyPos> SmartAnalyzer::s_pos;
 QMap<QString, QPair<QString,QString>> SmartAnalyzer::s_finger;
@@ -50,9 +52,7 @@ void SmartAnalyzer::ensureInited(){
     addFinger("0","R","RP"); addFinger("-","R","RP"); addFinger("=","R","RP"); addFinger("p","R","RP"); addFinger("[","R","RP"); addFinger("]","R","RP"); addFinger("\\","R","RP"); addFinger(";","R","RP"); addFinger("'","R","RP"); addFinger("/","R","RP");
     addFinger(" ","","TH"); addFinger("\n","R","RP");
 
-    QMap<QString,QString> b2s{{"`","~"},{"1","!"},{"2","@"},{"3","#"},{"4","$"},{"5","%"},{"6","^"},{"7","&"},{"8","*"},{"9","("},{"0",")"},{"-","_"},{"=","+"},{"[","{"},{"]","}"},{"\\","|"},{";"," : "},{"'","\" "},{",","<"},{".",">"},{"/","?"}}; // fix later
-    // clean entries: ";" -> ":" etc
-    b2s.clear();
+    QMap<QString,QString> b2s;
     b2s["`"]="~"; b2s["1"]="!"; b2s["2"]="@"; b2s["3"]="#"; b2s["4"]="$"; b2s["5"]="%"; b2s["6"]="^"; b2s["7"]="&"; b2s["8"]="*"; b2s["9"]="("; b2s["0"]=")"; b2s["-"]="_"; b2s["="]="+"; b2s["["]="{"; b2s["]"]="}"; b2s["\\"]="|"; b2s[";"]=":"; b2s["'"]="\""; b2s[","]="<"; b2s["."]=">"; b2s["/"]="?";
     s_baseToShift=b2s;
     for(auto it=b2s.begin(); it!=b2s.end(); ++it)

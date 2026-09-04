@@ -404,6 +404,12 @@ def analyze_text(target: str, typed: str, word_pool: list[str] | None = None) ->
                 # transposition of two chars
                 exp2 = target[i+1]
                 rep.category_counts[CATEGORY_TRANSPOSITION] += 1  # count as one event
+                # count total for the second char too (loop skips it via i+=2)
+                low2 = exp2.lower()
+                if exp2 != '\n' and exp2 != ' ':
+                    counter_total[low2] += 1
+                    if i+1 > 0:
+                        bigram_total[low+low2] += 1
                 d = distance(exp, typed[i])  # distance not really
                 # record as one detailed entry covering both positions
                 detailed.append({
@@ -530,8 +536,10 @@ def analyze_text(target: str, typed: str, word_pool: list[str] | None = None) ->
     letter_stats = {}
     for ch, tot in counter_total.items():
         mis = counter_mistake.get(ch, 0)
+        # cap mis at tot so error_rate never exceeds 1.0 (QML bar width safety)
+        mis_capped = min(mis, tot) if tot else mis
         acc = (tot - mis)/ tot * 100 if tot else 100
-        letter_stats[ch] = {"total": tot, "mistakes": mis, "accuracy": acc, "error_rate": mis/max(1,tot)}
+        letter_stats[ch] = {"total": tot, "mistakes": mis, "accuracy": acc, "error_rate": min(1.0, mis/max(1,tot))}
     # also include letters that only appear as mistakes but no total? already counted via suffix; for heatmap need include all a-z
     for ch in map(chr, range(ord('a'), ord('z')+1)):
         if ch not in letter_stats:
