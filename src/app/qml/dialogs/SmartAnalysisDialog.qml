@@ -257,13 +257,61 @@ Dialog {
                         }
                         // row 1 offset handled via empty item
                         Item { width:22; height:36; visible:false }
-                        Repeater { model: ["q","w","e","r","t","y","u","i","o","p","[","]","\\"]; delegate: Rectangle { width:44; height:36; color: report?heatColor(report.keyboardHeat[modelData]||0):"white"; border.color:"#cbd5e1"; Label{anchors.centerIn:parent; text:modelData.toUpperCase(); font.family:"Consolas"; font.bold:true; font.pointSize:9; color:report?heatTextColor(report.keyboardHeat[modelData]||0):"#334155"}; Label{anchors.bottom:parent.bottom; anchors.horizontalCenter:parent.horizontalCenter; anchors.bottomMargin:2; visible:report&&(report.keyboardHeat[modelData]||0)>0; text:report?((report.keyboardHeat[modelData]*100).toFixed(0)+"%"):""; font.pointSize:6; color:report?heatTextColor(report.keyboardHeat[modelData]||0):"#334155"} } }
+                        Repeater {
+                            model: ["q","w","e","r","t","y","u","i","o","p","[","]","\\"]
+                            delegate: Rectangle {
+                                width:44; height:36
+                                color: report ? heatColor(report.keyboardHeat[modelData]||0) : "white"
+                                border.color: "#cbd5e1"
+                                Label {
+                                    anchors.centerIn: parent
+                                    text: modelData.toUpperCase()
+                                    font.family: "Consolas"; font.bold: true; font.pointSize: 9
+                                    color: report ? heatTextColor(report.keyboardHeat[modelData]||0) : "#334155"
+                                }
+                                Label {
+                                    anchors.bottom: parent.bottom
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    anchors.bottomMargin: 2
+                                    visible: report && (report.keyboardHeat[modelData]||0)>0
+                                    text: report ? ((report.keyboardHeat[modelData]*100).toFixed(0)+"%") : ""
+                                    font.pointSize: 6
+                                    color: report ? heatTextColor(report.keyboardHeat[modelData]||0) : "#334155"
+                                }
+                            }
+                        }
                         // row 2
                         Item { width:22; height:36; visible:false }
-                        Repeater { model: ["a","s","d","f","g","h","j","k","l",";","'"]; delegate: Rectangle { width:44; height:36; color:report?heatColor(report.keyboardHeat[modelData.toLowerCase()]||report.keyboardHeat[modelData]||0):"white"; border.color:"#cbd5e1"; Label{anchors.centerIn:parent; text:modelData.toUpperCase(); font.family:"Consolas"; font.bold:true; font.pointSize:9; color:report?heatTextColor(report.keyboardHeat[modelData.toLowerCase()]||report.keyboardHeat[modelData]||0):"#334155"} } }
+                        Repeater {
+                            model: ["a","s","d","f","g","h","j","k","l",";","'"]
+                            delegate: Rectangle {
+                                width:44; height:36
+                                color: report ? heatColor(report.keyboardHeat[modelData.toLowerCase()]||report.keyboardHeat[modelData]||0) : "white"
+                                border.color: "#cbd5e1"
+                                Label {
+                                    anchors.centerIn: parent
+                                    text: modelData.toUpperCase()
+                                    font.family: "Consolas"; font.bold: true; font.pointSize: 9
+                                    color: report ? heatTextColor(report.keyboardHeat[modelData.toLowerCase()]||report.keyboardHeat[modelData]||0) : "#334155"
+                                }
+                            }
+                        }
                         // row 3
                         Item { width:44; height:36; visible:false }
-                        Repeater { model: ["z","x","c","v","b","n","m",",",".","/"]; delegate: Rectangle { width:44; height:36; color:report?heatColor(report.keyboardHeat[modelData]||0):"white"; border.color:"#cbd5e1"; Label{anchors.centerIn:parent; text:modelData.toUpperCase(); font.family:"Consolas"; font.bold:true; font.pointSize:9; color:report?heatTextColor(report.keyboardHeat[modelData]||0):"#334155"} } }
+                        Repeater {
+                            model: ["z","x","c","v","b","n","m",",",".","/"]
+                            delegate: Rectangle {
+                                width:44; height:36
+                                color: report ? heatColor(report.keyboardHeat[modelData]||0) : "white"
+                                border.color: "#cbd5e1"
+                                Label {
+                                    anchors.centerIn: parent
+                                    text: modelData.toUpperCase()
+                                    font.family: "Consolas"; font.bold: true; font.pointSize: 9
+                                    color: report ? heatTextColor(report.keyboardHeat[modelData]||0) : "#334155"
+                                }
+                            }
+                        }
                     }
                     // space
                     Rectangle {
