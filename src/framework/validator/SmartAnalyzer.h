@@ -58,6 +58,7 @@ private:
     static QMap<QString, QString> s_shiftToBase;
     static bool s_inited;
     static void ensureInited();
+    static void addRow(const QStringList &chars, double y, double x0, double dx = 1.0);
     static double distance(const QString &a, const QString &b);
     static bool adjacent(const QString &a, const QString &b);
     static QPair<QString,QString> finger(const QString &ch);

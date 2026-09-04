@@ -18,12 +18,12 @@ QMap<QString, QString> SmartAnalyzer::s_baseToShift;
 QMap<QString, QString> SmartAnalyzer::s_shiftToBase;
 bool SmartAnalyzer::s_inited = false;
 
-static void addRow(const QStringList &chars, double y, double x0, double dx=1.0){
+void SmartAnalyzer::addRow(const QStringList &chars, double y, double x0, double dx){
     for(int i=0;i<chars.size();++i){
-        SmartAnalyzer::KeyPos p{ x0 + i*dx, y };
-        SmartAnalyzer::s_pos[chars[i]] = p;
+        KeyPos p{ x0 + i*dx, y };
+        s_pos[chars[i]] = p;
         if(chars[i].size()==1 && chars[i][0].isLetter()){
-            SmartAnalyzer::s_pos[chars[i].toUpper()] = p;
+            s_pos[chars[i].toUpper()] = p;
         }
     }
 }
@@ -141,7 +141,7 @@ QVariantMap SmartAnalyzer::classify(const QString &exp, const QString &got, cons
         out["category"]="adjacent_key";
         out["reason"]=QString("'%1' is next to '%2' on QWERTY (dist %3). %4 — likely wrong finger / fat-finger.")
                          .arg(got, exp).arg(d,0,'f',1).arg(sf ? "Same finger" : "Different finger");
-        out["suggestion"]=QString("Focus on '%1' — %2. Slow down.").arg(exp, fingerFor(exp));
+        out["suggestion"]=QString("Focus on '%1' — %2. Slow down.").arg(exp, finger(exp).second);
         out["distance"]=d;
         return out;
     }
