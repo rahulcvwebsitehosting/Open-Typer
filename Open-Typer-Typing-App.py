@@ -1073,12 +1073,34 @@ class TypingApp(tk.Tk):
         target_words=target.split()
         typed_words=typed_text.split()
         err_words=sum(1 for a,b in zip(typed_words, target_words) if a!=b)
+        self._last_typed=typed_text
+        self._last_target=target
+        smart_hint=""
+        smart_detail=""
         if SMART_AVAILABLE and analyze_text:
             try:
                 rep=analyze_text(target, typed_text)
                 self.last_smart_report=rep
                 self.smart_session_reports.append(rep)
-            except: pass
+                try: get_global_analyzer().add_report(rep)
+                except: pass
+                worst = rep.worst_letters if hasattr(rep,'worst_letters') else rep.get('worst_letters',[])
+                cat = rep.category_counts if hasattr(rep,'category_counts') else rep.get('category_counts',{})
+                if worst:
+                    top = ", ".join(f"'{ch}'" for ch,_ in worst[:3])
+                    top_cat = max(cat, key=lambda k: cat[k]) if cat else ""
+                    label_map={"adjacent_key":"adjacent keys","shift_case":"Shift/Caps","shift_symbol":"Symbol Shift","transposition":"swapped","double_letter":"double-letter","other":"reading"}
+                    cat_txt=label_map.get(top_cat, top_cat) or "—"
+                    smart_hint = f"\n🧠 Smart: weakest → {top}  •  main: {cat_txt}"
+                    sugg = rep.suggestions if hasattr(rep,'suggestions') else rep.get('suggestions',[])
+                    if sugg:
+                        smart_detail = f"\n   → {sugg[0][:110]}"
+                else:
+                    smart_hint="\n🧠 Smart: Perfect — no weak letters!"
+            except Exception as e:
+                print("smart timed error", e)
+                smart_hint=""
+                smart_detail=""
         hist=f"⏱ PARA {self.time_limit}s {self.timed_source[:12]} — WPM {wpm:.0f} (gross {wpm_gross:.0f}) CPM {cpm:.0f} Acc {acc:.1f}% Err {self.errors} Cert {cert or '—'}"
         self.history.insert(0, hist)
         self.history=self.history[:5]
@@ -1091,16 +1113,29 @@ class TypingApp(tk.Tk):
             else: cert_msg+="Bronze: 200 CPM 96.5% — top 39%\n"
         else:
             cert_msg="\nCertificate: —\nNext: Bronze 200 CPM 96.5%\n"
-        msg = f"{'Time up!' if timeout else 'Completed!'}\n\nSource: {self.timed_source}\nTime limit: {self.time_limit}s  Elapsed: {int(elapsed//60):02d}:{int(elapsed%60):02d}\nChars: {typed_len}/{len(target)} (correct {correct})\n\nWPM: {wpm:.0f} (gross {wpm_gross:.0f})\nCPM: {cpm:.0f} (gross {cpm_gross:.0f})\nAccuracy: {acc:.1f}%\nErrors: {self.errors}  Error words: {err_words}\n{cert_msg}\nRetry?"
-        if _mb.askyesno("Time Attack Completed", msg):
+        msg = f"{'Time up!' if timeout else 'Completed!'}\n\nSource: {self.timed_source}\nTime limit: {self.time_limit}s  Elapsed: {int(elapsed//60):02d}:{int(elapsed%60):02d}\nChars: {typed_len}/{len(target)} (correct {correct})\n\nWPM: {wpm:.0f} (gross {wpm_gross:.0f})\nCPM: {cpm:.0f} (gross {cpm_gross:.0f})\nAccuracy: {acc:.1f}%\nErrors: {self.errors}  Error words: {err_words}{smart_hint}{smart_detail}\n{cert_msg}\nOpen detailed Smart Analysis (keyboard heatmap + why + drill)?"
+        opened_smart=False
+        if SMART_AVAILABLE and getattr(self,'last_smart_report',None) is not None:
+            if _mb.askyesno("Time Attack Completed — Smart Analysis", msg):
+                try:
+                    SmartAnalysisDialog(self, self._last_target, self._last_typed, elapsed)
+                    opened_smart=True
+                except Exception as e:
+                    print("smart dialog error", e)
+            if _mb.askyesno("Retry?", "Retry same Time Attack (new para)?"):
+                self._start_timed_para(self.time_limit, self.timed_source, len(self.current_text))
+                return
+            else:
+                self.is_timed_para=False
+                self.time_progress.config(value=0)
+                self._load_exercise()
+                return
+        if _mb.askyesno("Time Attack Completed", f"{'Time up!' if timeout else 'Completed!'}\n\nSource: {self.timed_source}\nTime limit: {self.time_limit}s  Elapsed: {int(elapsed//60):02d}:{int(elapsed%60):02d}\nChars: {typed_len}/{len(target)} (correct {correct})\n\nWPM: {wpm:.0f} (gross {wpm_gross:.0f})\nCPM: {cpm:.0f} (gross {cpm_gross:.0f})\nAccuracy: {acc:.1f}%\nErrors: {self.errors}  Error words: {err_words}\n{cert_msg}\nRetry?"):
             self._start_timed_para(self.time_limit, self.timed_source, len(self.current_text))
         else:
             self.is_timed_para=False
             self.time_progress.config(value=0)
             self._load_exercise()
-            if SMART_AVAILABLE and self.last_smart_report and self.errors>0:
-                if _mb.askyesno("Smart Analysis", "Show Smart Mistake Analysis for this para?"):
-                    self._show_smart_analysis()
 
     def _wrap_text(self, text, line_len):
         # Mimic ConfigParser::initExercise word wrap
@@ -1247,37 +1282,62 @@ class TypingApp(tk.Tk):
     def _on_complete(self):
         elapsed=time.time()-self.start_time if self.start_time else 0
         correct=max(0, self.typed - self.errors)
-        # Smart analysis capture (isolated, does not disturb timed para)
+        typed_text=""
+        try:
+            typed_text=self.input.get("1.0","end-1c")
+        except: pass
+        target_text=self.current_text
+        self._last_typed=typed_text
+        self._last_target=target_text
         if SMART_AVAILABLE and analyze_text:
             try:
-                typed_text=self.input.get("1.0","end-1c")
-                rep=analyze_text(self.current_text, typed_text)
+                rep=analyze_text(target_text, typed_text)
                 self.last_smart_report=rep
                 self.smart_session_reports.append(rep)
                 try: get_global_analyzer().add_report(rep)
                 except: pass
             except Exception as e:
                 print("smart analysis error", e)
+                self.last_smart_report=None
+        else:
+            self.last_smart_report=None
         acc=(self.typed - self.errors)/max(1,self.typed)*100 if self.typed else 100
         wpm=(correct/5)/(elapsed/60) if elapsed>0 else 0
-        # Add to history
         hist = f"{self.current_pack} L{self.current_lesson}.{self.current_sub}.{self.current_ex} — WPM {wpm:.0f} Acc {acc:.1f}% Time {int(elapsed//60):02d}:{int(elapsed%60):02d}"
         self.history.insert(0, hist)
         self.history=self.history[:5]
         self.history_label.config(text="\n".join(self.history) if self.history else "—")
-        # Show dialog
-        msg = f"Exercise completed!\n\nPack: {self.current_pack}\nLesson {self.current_lesson} • Sublesson {self.current_sub} • Exercise {self.current_ex}\n\nWPM: {wpm:.0f}\nAccuracy: {acc:.1f}%\nErrors: {self.errors}\nTime: {int(elapsed//60):02d}:{int(elapsed%60):02d}\n\nNext exercise?"
-        if messagebox.askyesno("Completed", msg):
-            self._nav(1)
+        smart_hint=""
+        smart_detail=""
+        try:
+            rep=getattr(self, 'last_smart_report', None)
+            if rep is not None:
+                worst = rep.worst_letters if hasattr(rep,'worst_letters') else rep.get('worst_letters',[])
+                cat = rep.category_counts if hasattr(rep,'category_counts') else rep.get('category_counts',{})
+                if worst:
+                    top = ", ".join(f"'{ch}'({st['mistakes']}/{st['total']})" for ch,st in worst[:3])
+                    top_cat = max(cat, key=lambda k: cat[k]) if cat else ""
+                    label_map={"adjacent_key":"adjacent keys (fat-finger)","shift_case":"Shift/Caps","shift_symbol":"Symbol Shift","transposition":"swapped letters","double_letter":"double-letter","other":"reading"}
+                    cat_txt=label_map.get(top_cat, top_cat) or "—"
+                    smart_hint = f"\n🧠 Smart: weakest → {top}\n   main cause: {cat_txt}"
+                    sugg = rep.suggestions if hasattr(rep,'suggestions') else rep.get('suggestions',[])
+                    if sugg:
+                        smart_detail = f"\n   → {sugg[0][:110]}"
+                else:
+                    smart_hint="\n🧠 Smart: Perfect — no weak letters! Try harder paragraph."
+        except: pass
+        base_msg = f"Exercise completed!\n\nPack: {self.current_pack}\nLesson {self.current_lesson} • Sublesson {self.current_sub} • Exercise {self.current_ex}\n\nWPM: {wpm:.0f}\nAccuracy: {acc:.1f}%\nErrors: {self.errors}\nTime: {int(elapsed//60):02d}:{int(elapsed%60):02d}{smart_hint}{smart_detail}"
+        if SMART_AVAILABLE and getattr(self,'last_smart_report',None) is not None:
+            if messagebox.askyesno("Completed — Smart Analysis ready", base_msg + "\n\n🧠 Smart Analysis shows: which letters you miss, why (adjacent keys / Shift / caps / swapped), keyboard heatmap + personalized drill.\n\nOpen detailed Smart Analysis now?"):
+                try:
+                    SmartAnalysisDialog(self, self._last_target, self._last_typed, elapsed)
+                except Exception as e:
+                    print("smart dialog error", e)
+                    messagebox.showerror("Smart Analysis error", str(e))
         else:
-            # stay but allow restart
-            pass
-        # Offer smart analysis if errors and available
-        if self.errors>0 and SMART_AVAILABLE and getattr(self, 'last_smart_report', None):
-            try:
-                if messagebox.askyesno("Smart Analysis", "Show Smart Mistake Analysis for this exercise?\n(Why you made those mistakes + personalized drill)"):
-                    self._show_smart_analysis()
-            except: pass
+            messagebox.showinfo("Completed", base_msg)
+        if messagebox.askyesno("Next exercise?", "Go to next exercise?"):
+            self._nav(1)
 
     def _open_custom(self):
         path=filedialog.askopenfilename(title="Open custom text", filetypes=[("Text files","*.txt"),("All files","*.*")])
@@ -1347,17 +1407,32 @@ class TypingApp(tk.Tk):
         win.focus_set()
 
     def _show_smart_analysis(self):
-        """Open SmartAnalysisDialog for current exercise or last completed."""
+        """Open SmartAnalysisDialog — prefers last completed exercise (para test) so analysis is visible even after Next."""
         if not SMART_AVAILABLE or not analyze_text:
             messagebox.showinfo("Smart Analysis", "Smart analysis engine not available. Ensure python/smart_analysis.py is present.")
             return
         target = getattr(self, 'current_text', '')
         typed = self.input.get("1.0","end-1c") if hasattr(self, 'input') else ""
         elapsed = time.time()-self.start_time if self.start_time else 0
+        has_last = hasattr(self, '_last_target') and hasattr(self, '_last_typed') and self._last_target and self._last_typed
+        if has_last:
+            cur_len = len(typed.strip())
+            last_len = len(self._last_typed.strip())
+            if cur_len < 5 or (last_len > cur_len + 10):
+                target = self._last_target
+                typed = self._last_typed
+        if not typed or len(typed.strip()) < 2:
+            if has_last:
+                target = self._last_target
+                typed = self._last_typed
+            else:
+                messagebox.showinfo("Smart Analysis", "Type something first — then open Smart Analysis to see weakest letters and why (or complete an exercise).")
+                return
         try:
             SmartAnalysisDialog(self, target, typed, elapsed)
         except Exception as e:
             messagebox.showerror("Smart Analysis error", str(e))
+            import traceback; traceback.print_exc()
 
     def _show_session_analysis(self):
         if not SMART_AVAILABLE or not get_global_analyzer:

@@ -47,6 +47,8 @@ Rectangle {
 	onValidatorChanged: {
 		resetClass();
 		updateGrade();
+		if(validator) smartReport = smartAnalyzer.analyze(validator.exerciseText, validator.inputText);
+		else smartReport = null;
 	}
 
 	function resetClass() {
@@ -63,6 +65,9 @@ Rectangle {
 	GradeCalculator {
 		id: gradeCalc
 	}
+
+	SmartAnalyzer { id: smartAnalyzer }
+	property var smartReport: null
 
 	ColumnLayout {
 		id: columnLayout
@@ -190,7 +195,7 @@ Rectangle {
 			}
 		}
 
-		// ── Smart Analysis — isolated (no timed-para conflict) ──
+		// ── Smart Analysis — isolated (no timed-para conflict) — now inline so para test ALWAYS shows what to practice ──
 		Rectangle {
 			Layout.fillWidth: true
 			Layout.topMargin: 12
@@ -198,7 +203,7 @@ Rectangle {
 			radius: 8
 			color: "#eff6ff"
 			border.color: "#bfdbfe"
-			visible: validator !== null
+			visible: validator !== null && smartReport !== null
 			ColumnLayout {
 				id: smartCol
 				anchors.fill: parent
@@ -206,29 +211,80 @@ Rectangle {
 				spacing: 6
 				RowLayout {
 					Layout.fillWidth: true
-					Label { text: qsTr("🧠 Smart Analysis"); font.bold:true; color:"#0f172a" }
+					Label { text: qsTr("🧠 Smart Analysis — What to practice"); font.bold:true; color:"#0f172a"; font.pointSize: 11 }
 					Item { Layout.fillWidth:true }
 					AccentButton {
-						text: qsTr("Open Smart Analysis")
+						text: qsTr("Details →")
 						font.pointSize: 9
 						onClicked: smartAnalyzerDialog.open()
+					}
+				}
+				// summary line with weakest letters
+				Label {
+					Layout.fillWidth: true
+					wrapMode: Text.WordWrap
+					font.pointSize: 9
+					color: "#0f172a"
+					font.bold: true
+					text: {
+						if(!smartReport) return ""
+						if(smartReport.worstLetters.length===0) return qsTr("Perfect — no weak letters! Try a harder paragraph or longer time.")
+						let top = smartReport.worstLetters.slice(0,3).map(function(x){ return "'" + x.letter + "' (" + x.stats.mistakes + "/" + x.stats.total + ")" }).join(", ")
+						let cat = smartReport.categoryCounts
+						let topCat = ""
+						let max=0
+						for(let k in cat) if(cat[k]>max){ max=cat[k]; topCat=k }
+						let labelMap={"adjacent_key":"adjacent keys (fat-finger)","shift_case":"Shift/Caps","shift_symbol":"Symbol Shift","transposition":"swapped letters","double_letter":"double-letter"}
+						return qsTr("Weakest: ") + top + (topCat ? (" • " + (labelMap[topCat]||topCat)) : "")
+					}
+				}
+				// inline bars for worst letters (no dialog needed)
+				Repeater {
+					model: smartReport ? smartReport.worstLetters.slice(0,3) : []
+					delegate: RowLayout {
+						Layout.fillWidth: true
+						spacing: 6
+						Label { text: "'" + modelData.letter + "'"; font.family:"Consolas"; font.bold:true; font.pointSize:10; Layout.preferredWidth: 34 }
+						Rectangle {
+							Layout.fillWidth: true
+							height: 14
+							color: "#f1f5f9"
+							border.color: "#e2e8f0"
+							Rectangle {
+								anchors.left: parent.left
+								anchors.top: parent.top
+								anchors.bottom: parent.bottom
+								width: parent.width * (modelData.stats.error_rate || 0)
+								color: modelData.stats.error_rate>=0.4 ? "#dc2626" : modelData.stats.error_rate>=0.2 ? "#f87171" : "#facc15"
+							}
+							Label {
+								anchors.centerIn: parent
+								text: Math.round((modelData.stats.error_rate||0)*100) + "%"
+								color: (modelData.stats.error_rate||0)>=0.2 ? "white" : "#0f172a"
+								font.bold:true
+								font.pointSize: 7
+							}
+						}
+						Label { text: modelData.stats.mistakes + "/" + modelData.stats.total; color:"#475569"; font.pointSize:7; Layout.preferredWidth: 60 }
 					}
 				}
 				Label {
 					Layout.fillWidth: true
 					wrapMode: Text.WordWrap
-					font.pointSize: 9
+					font.pointSize: 8
 					color: "#334155"
-					text: {
-						if(validator===null) return ""
-						// trigger via SmartAnalyzer if available, otherwise fallback hint
-						return qsTr("Tap to see which letters you miss, why (adjacent keys / Shift / transposition), and get a personalized drill.")
-					}
+					visible: smartReport && smartReport.suggestions.length>0
+					text: smartReport ? ("→ " + smartReport.suggestions[0]) : ""
+				}
+				Label {
+					Layout.fillWidth: true
+					wrapMode: Text.WordWrap
+					font.pointSize: 8
+					color: "#64748b"
+					text: qsTr("In Details: keyboard heatmap (red = you miss this key), why each mistake (adjacent / Shift / swapped), + personalized drill for weak letters.")
 				}
 			}
 		}
-
-		SmartAnalyzer { id: smartAnalyzer }
 		Loader {
 			id: smartAnalyzerDialogLoader
 			active: false

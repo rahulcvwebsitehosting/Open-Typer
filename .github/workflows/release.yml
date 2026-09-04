@@ -26,9 +26,6 @@ jobs:
       shell: bash
     - name: Set up node.js
       uses: actions/setup-node@v3
-    - if: env.build_on_new_tags != 1
-      name: Cancel if build on new tags is disabled
-      uses: andymckay/cancel-action@0.2
     - if: contains(matrix.arch, 'amd64')
       name: Install dependencies
       run: |
@@ -130,9 +127,6 @@ jobs:
       shell: bash
     - name: Set up node.js
       uses: actions/setup-node@v3
-    - if: env.build_on_new_tags != 1
-      name: Cancel if build on new tags is disabled
-      uses: andymckay/cancel-action@0.2
     - name: Get version
       run: |
         version=$(head -n 1 .qmake.conf)
@@ -231,9 +225,6 @@ jobs:
       shell: bash
     - name: Set up node.js
       uses: actions/setup-node@v3
-    - if: env.build_on_new_tags != 1
-      name: Cancel if build on new tags is disabled
-      uses: andymckay/cancel-action@0.2
     - name: Get version
       run: |
         version=$(head -n 1 .qmake.conf)
